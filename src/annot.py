@@ -59,11 +59,17 @@ def annotate_results(annot_f,probe_res,empty="Other"):
 	for idx in indeces:
 		 counters[idx] = dict(Counter(probedf.loc[idx]))
 	t = pd.DataFrame.from_dict(counters,orient='index')
-	t.fillna(0,inplace=True)
+	t.fillna(0.0,inplace=True)
 	t = t.apply(lambda x:round((x/num_probes)*100,2))
+	cols = t.columns.to_list()
+	cols.remove(empty)
+	indeces = t.index
+	for idx in indeces:
+		maxval = t.loc[idx,cols].astype(float).idxmax()
+		# If max value == 0 maxval = None
+		t.loc[idx,"Dominant lineage"] = maxval
 	probedf = probedf.join(t)
 	probedf.to_excel("ProbeF_lineage.xlsx") # TODO fix correctly the output file outputdir + query_f + "_ProbeF_lineage"
-
 
 fin = "../input/signature_nucl_data_20210602_for_params.xlsx" # TODO: Fix to Take it from params
 annot_f = "../input/annot.xlsx" # TODO: Fix to Take it from params
@@ -72,3 +78,7 @@ annot_f = "../input/annot.xlsx" # TODO: Fix to Take it from params
 probe_res = "../Script_out/10359_HPV16_genbank.fasta_Probes.xlsx"
 # TODO: Fix to Take it from params
 annotate_results(annot_f,probe_res)
+
+
+
+

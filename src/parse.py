@@ -1,19 +1,10 @@
 from Bio.Blast import NCBIXML
+from Bio import SeqIO
 import pandas as pd
 import os
 import logging
 import re
-
-
-def _check_file_exists(f,outdir):
-	"""
-	Filelist is imported from blast.py return
-	"""
-	exist = os.path.exists(f)
-	if exist == True:
-		return True
-	logging.debug("Blastn result file does not exist in %s" %(outdir))
-	raise Exception("Blastn result file does not exist in %s" %(outdir))
+import pathlib
 
 def _sort_alphanumeric(iteratable):
 	# Helper func Sort the given motif list alphanumerically :return: sorted list 
@@ -22,7 +13,8 @@ def _sort_alphanumeric(iteratable):
 	return sorted(iteratable, key = sorting_key)
 
 
-def parse_blast_results(blastres_f,outdir, query_f):
+
+def parse_probe_blast_results(blastres_f,outdir, query_f):
 	"""
 	Reads the blast output files and ...
 	Return None
@@ -111,14 +103,86 @@ def parse_blast_results(blastres_f,outdir, query_f):
 	probedf = pd.DataFrame.from_dict(probe_table_res,orient='index')
 	return probedf
 
+# TODO: Make evrything using path and os modules for compatibility
 paramsdf = pd.read_excel("../input/params.xlsx",index_col=0)
 params = paramsdf.to_dict()['Value']
 outdir = params['out']
 query_f = params['query']
 blastn_f = outdir + query_f + "_Blastn_res.xml"
-_check_file_exists(blastn_f, outdir)
-probedf = parse_blast_results(blastn_f, outdir, query_f)
-probedf_cols = list(probedf.columns)
-probedf_cols = _sort_alphanumeric(probedf_cols)
-probedf = probedf[probedf_cols]
-probedf.to_excel(outdir + query_f + "_Probes.xlsx",na_rep="X")
+# _check_file_exists(blastn_f, outdir) # Import from _checks
+# probedf = parse_probe_blast_results(blastn_f, outdir, query_f)
+# probedf_cols = list(probedf.columns)
+# probedf_cols = _sort_alphanumeric(probedf_cols)
+# probedf = probedf[probedf_cols]
+# probedf.to_excel(outdir + query_f + "_Probes.xlsx",na_rep="X")
+
+def _get_db_lengths():
+	# TODO: add the database path as input to function
+	db_path = os.path.join(str(pathlib.Path(__file__)), str(pathlib.Path('../resources/sequences/16refs_gene_db.fa'))).replace(os.path.basename(__file__) + "/", "")
+	# TODO: This should be given from blast script or should be updated for windows / linux
+	dblengths = {}
+	seqrecords = SeqIO.parse(db_path,"fasta")
+	for seqrecord in seqrecords:
+		name = seqrecord.id
+		seqlen = len(str(seqrecord.seq))
+		dblengths[name] = seqlen
+	return dblengths
+
+def parse_gene_identification_blast_results(blastres_f,outdir, query_f, dblengths):
+	blast_records= NCBIXML.parse(open(blastres_f))
+	blast_res = {}
+	for blast_record in blast_records: # Each blast record is the total res for a specific query
+		qorg = blast_record.query
+		if qorg not in blast_res:
+			blast_res[qorg] = {}
+
+		for alignment in blast_record.alignments: # One aln for each query - subject hit
+			subjct = alignment.hit_def # alignment.hit_def is the subject name
+			subjct_name = subjct[:-3]
+			gene = subjct[-2:]
+			if gene not in blast_res[qorg]:
+				blast_res[qorg][gene] = {
+				"qaccver":qorg,
+				"saccver":None,
+				"qstart":0,
+				"qend":0,
+				"sstart":0,
+				"send":0,
+				"length":0,
+				"pident":0,
+				"evalue":1,
+				"subject_covhsp":0,
+				"subject_covtotal":0,
+				}
+			# alignment.length is the total aln length?
+			for hsp in alignment.hsps: # Each query - subject hit has multiple hsps (blast hits)
+				qstart =  hsp.query_start
+				qend =  hsp.query_end
+				sstart =  hsp.sbjct_start
+				send =  hsp.sbjct_end
+				evalue = hsp.expect 
+				hsp_len = hsp.align_length
+				pident =  hsp.identities / hsp.align_length # As calculated in NCBI blast2seq
+				if evalue < blast_res[qorg][gene]["evalue"]: # Keep only the best hsp result
+					blast_res[qorg][gene]["saccver"] = subjct
+					blast_res[qorg][gene]["qstart"] = qstart
+					blast_res[qorg][gene]["qend"] = qend
+					blast_res[qorg][gene]["sstart"] = sstart 
+					blast_res[qorg][gene]["send"] = send
+					blast_res[qorg][gene]["evalue"] = evalue
+					blast_res[qorg][gene]["length"] = hsp_len
+					blast_res[qorg][gene]["pident"] = pident
+					blast_res[qorg][gene]["subject_covhsp"] = (hsp_len/dblengths[subjct])*100
+					# print(subjct,(hsp_len/dblengths[subjct])*100, qorg,hsp)
+					# input()
+	df_list = []
+	for k in blast_res:
+		tmpdf = pd.DataFrame.from_dict(blast_res[k],orient='index')
+		df_list.append(tmpdf)
+
+	blastdf = pd.concat(df_list)
+	blastdf.to_excel(outdir + query_f + "Blastnres.xlsx",index=False)
+
+
+dblengths = _get_db_lengths()
+parse_gene_identification_blast_results(blastn_f, outdir, query_f, dblengths)

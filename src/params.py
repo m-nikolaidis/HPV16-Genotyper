@@ -6,7 +6,6 @@ import os
 # Create param file
 def create_default_param_file():
 	# The user should have the option to output a reference param file and change it accordingly
-	pass
 	def _defaultparams():
 		system = sys.platform
 		input_dir = os.getcwd() + "/../input/" # The user should provide the input dir cmd? just like the orthologues pipeline
@@ -20,8 +19,7 @@ def create_default_param_file():
 			"out": output_dir,
 			"evalue": 10, 
 			"max_target_seqs": 10,
-			"word_size": 4, # Minimum for blastn search
-			"outfmt" : 5,
+			"word_size": 7,
 			"num_threads": threads_to_use,
 			"query":query_vectors,
 			"blastdb":blastn_db,

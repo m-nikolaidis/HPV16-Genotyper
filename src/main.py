@@ -6,15 +6,14 @@ import sys
 from Bio import SeqIO
 import re
 # import annot
-def check_input_fa():
-	pass
+
 
 def create_dirs(out_dir):
 		"""
 		Perform the necessary actions to set up the script working environment
 		"""
 		os.makedirs(out_dir + "/Script_out", exist_ok=False)
-		os.makedirs(out_dir + "/tmpBlastn_dir", exist_ok=False)
+		os.makedirs(out_dir + "/tmp_dir", exist_ok=False)
 		logging.debug(" Environment set successfully in dir %s" %(out_dir))
 
 if __name__ == "__main__":

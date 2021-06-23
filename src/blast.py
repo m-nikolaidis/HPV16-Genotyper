@@ -48,11 +48,11 @@ def blastn_search(exe_params, workflow):
 	makedb = NcbimakeblastdbCommandline(cmd = makeblastdb_bin,
 										dbtype ="nucl",
 										input_file = input_dir + db_path,
-										out = outdir + "/tmpBlastn_dir/" + db_file,
+										out = outdir + "/tmp_dir/" + db_file,
 										)
 	blastn_search = NcbiblastnCommandline(cmd = blastn,
 											query = input_dir + query_f,
-											db = outdir + "/tmpBlastn_dir/" + db_file,
+											db = outdir + "/tmp_dir/" + db_file,
 											outfmt = 5,
 											max_target_seqs = 100,
 											out = blastres_f,

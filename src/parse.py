@@ -181,6 +181,7 @@ def parse_gene_identification_blast_results(blastres_f,outdir, query_f, dblength
 		df_list.append(tmpdf)
 
 	blastdf = pd.concat(df_list)
+	#TODO: Remap coords df with 1 word - acession for each org
 	blastdf.to_excel(outdir + query_f + "Blastnres.xlsx",index=False)
 
 

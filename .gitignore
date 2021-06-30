@@ -73,8 +73,10 @@ __pypackages__/
 cython_debug/
 
 # Custom folders and files
+Script_out_old
 Script_out
 input
 src/gui/
+src/tmp
 ideas
 resources/sequences/tmp

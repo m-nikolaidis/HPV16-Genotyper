@@ -1,18 +1,68 @@
-import pandas as pd
-from Bio import SeqIO
 import re
-from Bio.Align.Applications import MuscleCommandline
-import numpy as np
 import os
-import pathlib
 import sys
+import pathlib
+import numpy as np
+import pandas as pd
+from Bio import SeqIO, AlignIO
+from Bio.Align.Applications import MuscleCommandline
+from ete3 import Tree, TreeStyle, NodeStyle, faces, AttrFace, TreeFace, TextFace
 
-def prepare_gene_files_for_aln(params):
+
+
+
+def prepare_batch_alns(outdir, query_f_path, geneid_blast_res_xls, muscle_bin, batch_size=1):
+	"""Split the input fasta file in batches of size N.
+	Each batch will be utilized for 
+	1) the extraction of genes
+	2) creation of gene profiles
+	3) computation of phylogenetic trees
+	input: #TODO: Add this
+	return: None
 	"""
-	Write a better docstring
-	"""
+	def _split_batches(query_f_path, outdir, batch_size):
+		"""Split the batches using a generator function to save memory.
+		input: #TODO: Add this
+		output: Batch files in tmp directory, File with sequence allocations for easy tracking
+		"""
+		def _batch_iterator(iterator, batch_size):
+			"""Returns lists of length batch_size.
+		
+			This can be used on any iterator, for example to batch up
+			SeqRecord objects from Bio.SeqIO.parse(), or simply
+			lines from a file handle.
+		
+			This is a generator function, and it returns lists of the
+			entries from the supplied iterator.  Each list will have
+			batch_size entries, although the final list may be shorter.
+			"""
+			entry = True  # Make sure we loop once
+			while entry:
+				batch = []
+				while len(batch) < batch_size:
+					try:
+						entry = next(iterator)
+					except StopIteration:
+						entry = None
+					if entry is None: # End of file
+						break
+					batch.append(entry)
+				if batch:
+					yield batch
+		
+		record_iter = SeqIO.parse(open(query_f_path), "fasta")
+		for i, batch in enumerate(_batch_iterator(record_iter, batch_size)):
+			tmpfout = outdir / pathlib.Path("Batch_%i.fa" % (i + 1)) #TODO: Use pathlib
+			#TODO, write a file with which sequences are contained in each batch file
+			with open(tmpfout, "w") as handle:
+				count = SeqIO.write(batch, handle, "fasta")
+
+
 	def _cut_genes(genomes_f, coords_df):
-		org_regex = re.compile(r'^(\S+)')
+		"""Extract the gene sequences for each batch fasta file produced by _split_batches()
+		input: batch file (complete genome), pandas dataframe with gene coordinates
+		return: dictionary of gene sequences
+		"""
 		final_seqs = {}
 		seqs = SeqIO.to_dict(SeqIO.parse(genomes_f, "fasta"))
 		orgs = list(seqs.keys())
@@ -31,128 +81,135 @@ def prepare_gene_files_for_aln(params):
 				final_seqs[gene][org] = str(seq)
 		return final_seqs
 		
+	def _align_sequences(gene_files,muscle_bin,method="muscle"):
+		"""Align batch gene sequences to create profiles
+		input: gene_files, list of pathlib paths
+		return: list of pathlib paths pointing to each alignment file
+		"""
+		aln_out_dir = outdir / pathlib.Path("tmp_dir/Alignments")
+		aln_files = []
+		for f in gene_files:
+			fout = aln_out_dir / (f.stem + "_aln.fa")
+			if method == "muscle":
+				aln_cline = MuscleCommandline(cmd = muscle_bin, input=f, out=fout)
+			else:
+				aln_cline = None
+				raise Exception(" No other alignment method is implemented yet ")
+			aln_cline()
+			aln_files.append(fout)
+		return aln_files
 
-	output_dir = params['out']
-	# os.mkdir(output_dir + "tmp_dir/Batch_genes")
-	db_path = os.path.join(str(pathlib.Path(__file__)), str(pathlib.Path('../resources/sequences/16refs_gene_db.fa'))).replace(os.path.basename(__file__) + "/", "")
-	dbseqs = SeqIO.to_dict(SeqIO.parse(db_path, "fasta"))
-	
-	query_f = params['query']
-	coord_excel = output_dir + query_f + "Blastnres.xlsx"
-	coords_df = pd.read_excel(coord_excel,engine="openpyxl")
+	batch_fa_dir = outdir / pathlib.Path("tmp_dir/Batch_fasta_files")
+	_split_batches(query_f_path,batch_fa_dir,batch_size)
 
-	# https://pandas.pydata.org/pandas-docs/stable/user_guide/scale.html
-	# Check with large dataset, to be more memory efficient
-
-	batch_fa_dir = output_dir + "tmp_dir/" + "Batch_fasta_files/"
+	coords_df = pd.read_excel(geneid_blast_res_xls,engine="openpyxl") # Check for efficiency https://pandas.pydata.org/pandas-docs/stable/user_guide/scale.html
+	batch_genes_dir = outdir / pathlib.Path("tmp_dir/Batch_genes")
 	batch_fa_files = os.listdir(batch_fa_dir)
-	db_rec = SeqIO.to_dict(SeqIO.parse(db_path, "fasta"))
-	db_orgs = [g+str(i) for g in ["A","B","C","D"] for i in range(1,5)]
+	batch_fa_files = [batch_fa_dir / pathlib.Path(f) for f in batch_fa_files]
+	gene_files = []
 	for batch_f in batch_fa_files:
-		batchname = batch_f.split(".")[0]
-		gene_seqs = _cut_genes(batch_fa_dir + batch_f, coords_df)
+		batchname = batch_f.stem 
+		gene_seqs = _cut_genes(batch_f, coords_df)
 		for gene in gene_seqs:
-			fout = output_dir + "tmp_dir/Batch_genes/" + batchname + "_" + gene + ".fa"   # TODO: use pathlib
+			fout = batch_genes_dir / pathlib.Path(batchname + "_" + gene + ".fa")
+			gene_files.append(fout)
 			fhandle = open(fout,"w")
 			for k in gene_seqs[gene]:
 				str_to_write = ">" + k + "\n" + str(gene_seqs[gene][k]) + "\n"
 				fhandle.write(str_to_write)
-			for db_org in db_orgs:
-				str_to_write = ">" + db_org + "\n" + str(db_rec[db_org + "_" + gene].seq) + "\n"
-				fhandle.write(str_to_write)
 			fhandle.close()
-	#seqpath = os.path.join(str(pathlib.Path(__file__)), str(pathlib.Path(output_dir + 'tmp_dir/.fa'))).replace(os.path.basename(__file__) + "/", "")
-
-
-def align_sequences(params,system, method="muscle"):
-	output_dir = pathlib.Path(params['out'])
-	# output_dir = "C:\\Users\\mario\\Desktop\\Lab\\HPV16\\HPV16_genotyping_tool\\Script_out"
-	batch_gene_aln_dir = os.path.join(str(output_dir),str(pathlib.Path("tmp_dir/Alignments/")))
-	# os.mkdir(batch_gene_aln_dir)
-	muscle_bin_unix = os.path.join(str(pathlib.Path(__file__)), 
-		str(pathlib.Path('../resources/Linux_bin/muscle3.8.31_i86linux64'))).replace(os.path.basename(__file__) + "/", "")
-	muscle_bin_win = os.path.join(str(pathlib.Path(__file__)), 
-		str(pathlib.Path('../resources/Win_bin/muscle3.8.31.exe'))).replace(os.path.basename(__file__) + "\\", "")
-	batch_gene_dir = os.path.join(str(output_dir),str(pathlib.Path("tmp_dir/Batch_genes/")))
-	files = os.listdir(batch_gene_dir)
-	aln_files = []
-	for f in files:
-		fin = str(os.path.join(batch_gene_dir,pathlib.Path(f)))
-		fout =str(os.path.join(batch_gene_aln_dir,pathlib.Path(f[:-3]))) + ".phy"
-		aln_files.append(fout)
-		if method == "muscle":
-			if "win" in system:
-				cline = MuscleCommandline(cmd = muscle_bin_win, input=fin, out=fout, phyi=True )
-			if "linux" in system:
-				cline = MuscleCommandline(cmd = muscle_bin_unix, input=fin, out=fout, phyi=True )
-			# The phyi parameter will truncate the Fasta headers to 10 character long strings
-			# Rename them afterwards. Does not interfere with alignment if the names are in variable lengths
-		# cline()
+	
+	aln_files = _align_sequences(gene_files, muscle_bin)
 	return aln_files
 
-def _rename_phylip():
-	pass
+def profile_aln(outdir, aln_files, profiledb, muscle_bin, method="muscle"):
+	"""Align each batch gene profile to the corresponding reference gene profile.
+	Profile alignment input files MUST be in Fasta format
+	input: outdir pathlib path pointing to output directoy
+	aln_files, list of pathlib paths pointing to the batch gene alignment files
+	return: list of pathlib paths pointing to the final alignments
+	"""
+
+	aln_out_dir = outdir / pathlib.Path("tmp_dir/Alignments")
+	profile_aln_dir = outdir / pathlib.Path("Profile_alns")
+	profile_aln_files = []
+	gene_regex = re.compile(r'^Batch_\d+_(\S+)_aln.fa$')
+	for f in aln_files:
+		fout = profile_aln_dir / f.name
+		profile_aln_files.append(fout)
+		m = re.match(gene_regex,f.name)
+		gene = m.group(1)
+		db_gene_f = pathlib.Path(profiledb) / pathlib.Path(gene + "_profile.fa")
+		if method == "muscle":
+			aln_cline = MuscleCommandline(cmd = muscle_bin, in1=f, in2=db_gene_f, out=fout, profile=True)
+		else:
+			aln_cline = None
+			raise Exception(" No other alignment method is implemented yet ")
+		aln_cline()
+	return profile_aln_files
+
+def build_trees(outdir, aln_files,phyml_bin, seaview_bin, method="PhyML", dist="Kimura", nj_bootstrap_repl=1000):
+	"""
+	
+	"""
+
+	def _create_phylip_input(aln_f, phylip_aln_f):
+		"""Transform fasta files to phylip format
+		PhyML needs phylip input format to run
+		input: 
+		aln_f: pathlib path of the alignment file to convert
+		phylip_aln_f: pathlib path of the phylip file
+		"""
+		# The relaxed phylip format needs for the sequence headers to not have spaces
+		# CARE! Might create incompatabilities later?
+		
+		alignment = AlignIO.read(aln_f, "fasta")
+		for i in range(len(alignment)):
+			full_name = alignment[i].id
+			filt_name = full_name.replace(" ","_")
+			alignment[i].id = filt_name
+		AlignIO.write([alignment], phylip_aln_f, "phylip-relaxed")
 
 
-def build_tree(params,aln_files, method="PhyML", dist="Kimura", bootstrap_repl=1000):
-	output_dir = pathlib.Path(params['out'])
-	batch_gene_trees_dir = os.path.join(str(output_dir),str(pathlib.Path("tmp_dir/Trees/")))
-	# os.mkdir(batch_gene_trees_dir)
-	def _clean_phyml_output(phylip_aln_f, new_dir):
-		# Move _phyml_tree.txt files to the appropriate directory and remove _phyml_stats.txt
-		basename = os.path.basename(phylip_aln_f)
-		phyml_tree_f = phylip_aln_f + "_phyml_tree.txt"
-		phyml_tree_f_renamed = os.path.join(str(new_dir),str(pathlib.Path(basename + "_phyml_tree.txt")))
-		phyml_stats_f = phylip_aln_f + "_phyml_stats.txt"
+	def _clean_phyml_output(phylip_aln_f, trees_dir):
+		"""Move _phyml_tree.txt files to the appropriate directory and remove _phyml_stats.txt
+		"""
+		phyml_tree_f = phylip_aln_f.parent / (phylip_aln_f.name + "_phyml_tree.txt")
+		phyml_stats_f = phylip_aln_f.parent / (phylip_aln_f.name + "_phyml_stats.txt")
+		phyml_tree_f_target = trees_dir / phyml_tree_f.name
 		try:
-			pathlib.Path(phyml_tree_f).rename(phyml_tree_f_renamed)
+			phyml_tree_f.replace(phyml_tree_f_target)
+			phyml_stats_f.unlink()
 		except:
 			pass
-		try:
-			pathlib.Path(phyml_stats_f).unlink()
-		except:
-			pass
-
-	seaview_lin_bin = os.path.join(str(pathlib.Path(__file__)), 
-		str(pathlib.Path('../resources/Linux_bin/seaview5/seaview'))).replace(os.path.basename(__file__) + "/", "")
-	phyml_lin_bin = os.path.join(str(pathlib.Path(__file__)), 
-		str(pathlib.Path('../resources/Linux_bin/phyml'))).replace(os.path.basename(__file__) + "/", "")
-	for f_phylip in aln_files:
-		basename = os.path.basename(f_phylip)
-		tree_file_out = os.path.join(str(batch_gene_trees_dir),
-			str(pathlib.Path("tmp_dir/Trees/" + basename + "_NJ_tree.nwk")))
-		if method == "BioNJ":
-			cmd = seaview_lin_bin + " -build_tree -NJ -distance " \
-			+ dist + " -replicates " + str(bootstrap_repl) + " -o " + tree_file_out + " " + f_phylip
-			os.system(cmd)
-			# Requires ubuntu 20 to run with latest seaview. 
-			# (/lib/x86_64-linux-gnu/libm.so.6: version `GLIBC_2.29' not found)
-			# Write in MD
-			# Need to check if this works in Lubuntu vm, in WSL i get segmentation fault. I think is memory problem
-			# It tries to acess forbidden memory adresses
+	trees_dir = outdir / pathlib.Path("Phylogenetic_trees")
+	alns_dir = aln_files[0].parent
+	if method == "PhyML":
+		phylip_dir = alns_dir / pathlib.Path("phylip")
+		# TODO: Uncomment after testing
+		# phylip_dir.mkdir() # Write error in logfile if folder exists
+	for aln_f in aln_files:
 		if method == "PhyML":
-				cmd = phyml_lin_bin + " --quiet -o tl -s SPR -v estimated -m GTR -d nt -b -4 -f m -i " + f_phylip
-				os.system(cmd)
-				_clean_phyml_output(f_phylip,batch_gene_trees_dir)
-				# TODO: should add check if files exist? If not skip
+				phylip_aln_f = phylip_dir / aln_f.with_suffix(".phy").name
+				_create_phylip_input(aln_f, phylip_aln_f)
+				cmd = phyml_bin + " --quiet -o tl -s SPR -v estimated -m GTR -d nt -b -4 -f m -i " + str(phylip_aln_f)
+				# os.system(cmd)
+				_clean_phyml_output(phylip_aln_f,trees_dir)
+		if method == "BioNJ":
+			tree_file_out = trees_dir / (aln_f.stem + "_NJ_tree.nwk")
+			cmd = seaview_bin + " -build_tree -NJ -distance " \
+			+ dist + " -replicates " + str(nj_bootstrap_repl) + " -o " + str(tree_file_out) + " " + str(aln_f)
+			# os.system(cmd)
 
+	return trees_dir
 
-
-
-
-params_f_unix = os.path.join(str(pathlib.Path(__file__)), str(pathlib.Path('../input/params.xlsx'))).replace(os.path.basename(__file__) + "/", "")
-params_f_win = os.path.join(str(pathlib.Path(__file__)), str(pathlib.Path('../input/params.xlsx'))).replace(os.path.basename(__file__) + "\\", "")
-# If i have windows the path_cut should be "\\"
-# In linux it is "/"
-# Check if there is built in functionality to add them without specifying
-# system = "Win32"
-system = sys.platform
-if "win" in system:
-	paramsdf = pd.read_excel(params_f_win,index_col=0, engine="openpyxl") # TODO, add this from main script, check if correct
-else:
-	paramsdf = pd.read_excel(params_f_unix,index_col=0, engine="openpyxl") # TODO, add this from main script
-
-params = paramsdf.to_dict()['Value']
-# prepare_gene_files_for_aln(params)
-aln_files = align_sequences(params,system)
-build_tree(params, aln_files, method="BioNJ")
+def visualize_trees(trees_dir, batch):
+	"""
+	TODO: Finish this
+	"""
+	pass
+def render_trees(trees_dir, batch):
+	"""
+	TODO: Finish this
+	"""
+	pass

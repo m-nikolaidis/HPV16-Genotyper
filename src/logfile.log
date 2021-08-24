@@ -1,0 +1,12 @@
+2021-07-06 06:48:32,274  Loaded parameters file successfully 
+2021-07-06 06:48:32,274  Environment set successfully in dir C:\Users\mario\Desktop\Lab\HPV16\HPV16_genotyping_tool\tmp
+2021-07-06 06:48:32,275 C:\Users\mario\Desktop\Lab\HPV16\HPV16_genotyping_tool\input\mock.fa exists
+2021-07-06 06:48:32,276  Finished input file integrity check successfully 
+2021-07-06 06:48:32,280  Cleaned the fasta file mock.fa at N percentage 100 
+2021-07-06 06:48:32,280  Permission to write on C:\Users\mario\Desktop\Lab\HPV16\HPV16_genotyping_tool\tmp 
+2021-07-06 06:48:32,281  Starting BLASTn search for gene identification
+2021-07-06 06:48:34,620  Finished BLASTn search 
+2021-07-06 06:48:34,620  Parsing gene identification results 
+2021-07-06 06:48:34,750  Starting BLASTn search for SNP identification
+2021-07-06 06:48:37,223  Finished BLASTn search 
+2021-07-06 06:48:37,224  Parsing SNP identification results 

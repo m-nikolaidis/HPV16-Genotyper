@@ -4,6 +4,32 @@ import pathlib
 import logging
 from Bio import SeqIO
 
+def create_dirs(outdir, exist_ok=False):
+		"""
+		Perform the necessary actions to set up the script working environment
+		"""
+		script_out = outdir
+		tmp_out = script_out / pathlib.Path("tmp_dir")
+		tmp_genes_out = tmp_out / pathlib.Path("Gene_seqs") # Gene files of batch size
+		tmp_alignments_out = tmp_out / pathlib.Path("Alignments") # Alignment of batch genes
+		profiles_out = script_out / pathlib.Path("Profile_alns") # Final profile alns for each gene
+		trees_out = script_out / pathlib.Path("Phylogenetic_Trees")
+		graphics_out = script_out / pathlib.Path("Graphics")
+		gene_sim_graphics = graphics_out / pathlib.Path("GeneSim")
+		snp_graphics = graphics_out / pathlib.Path("SNP_detection")
+		tree_render = graphics_out / pathlib.Path("Trees_images")
+		
+		script_out.mkdir(exist_ok=True)
+		tmp_out.mkdir(exist_ok=exist_ok)
+		tmp_genes_out.mkdir(exist_ok=exist_ok)
+		tmp_alignments_out.mkdir(exist_ok=exist_ok)
+		profiles_out.mkdir(exist_ok=exist_ok)
+		trees_out.mkdir(exist_ok=exist_ok)
+		graphics_out.mkdir(exist_ok=exist_ok)
+		gene_sim_graphics.mkdir(exist_ok=exist_ok)
+		snp_graphics.mkdir(exist_ok=exist_ok)
+		tree_render.mkdir(exist_ok=exist_ok)
+
 def file_exists(f):
 	"""Empty docstring
 	"""
@@ -11,7 +37,7 @@ def file_exists(f):
 	if not exist:
 		logging.critical("%s does not exist" %(f))
 		raise FileNotFoundError("%s does not exist" %(f))
-	logging.info("%s exists" %(f))
+	logging.info(" %s exists" %(f))
 
 def input_file_format(fasta_file_path):
 	"""Check if the input query file is in supported format
@@ -42,18 +68,31 @@ def filter_input_file(fasta_file_path,por_n=100,min_length=0):
 	Input: Complete path of the fasta file (Posix | Windows Path)
 	"""
 
-	def _sequence_cleaner(fasta_file_path,por_n, min_length):
+	def _sequence_cleaner(fasta_file_path):
+		"""Clean the sequences for non ATGC nucleotides
+		All the non canonical nucleotides will be turned to N
+		"""
+		sequences = SeqIO.to_dict(SeqIO.parse(fasta_file_path, "fasta"))
+		for seq_record in sequences:
+			sequence = str(sequences[seq_record].seq).upper()
+			for x in range(len(sequence)):
+				char = sequence[x]
+				if char != "A" and char != "T" and char != "G" and char != "C" and char != "N":
+					sequence = sequence[:x] + "N" + sequence[x+1:]
+			sequences[seq_record].seq =  sequence
+		return sequences
+	def _remove_problematic_seqs(sequences,por_n, min_length):
 		"""min_length Default value 0, it means you don’t have to care about the minimum length
 		 por_n the user defines the % of N is allowed. Default value 100, all sequences with ’N’ will be in your output, 
 		 set value to 0 if you want no sequences with ”N” in your output
 		"""
 		# Create our hash table to add the sequences
-		sequences = {}
+		final_sequences = {}
 	
 		# Using the Biopython fasta parse we can read our fasta input
-		for seq_record in SeqIO.parse(fasta_file_path, "fasta"):
+		for seqname in sequences:
 			# Take the current sequence
-			sequence = str(seq_record.seq).upper()
+			sequence = str(sequences[seqname].seq).upper()
 			# Check if the current sequence is according to the user parameters
 			if (
 				len(sequence) >= min_length
@@ -61,12 +100,12 @@ def filter_input_file(fasta_file_path,por_n=100,min_length=0):
 			):
 				# If the sequence passed in the test "is it clean?" and it isn't in the
 				# hash table, the sequence and its id are going to be in the hash
-				if sequence not in sequences:
-					sequences[sequence] = seq_record.id
+				if sequence not in final_sequences:
+					final_sequences[sequence] = seqname
 				# If it is already in the hash table, we're just gonna concatenate the ID
 				# of the current sequence to another one that is already in the hash table
 				else:
-					sequences[sequence] += "_" + seq_record.id
+					final_sequences[sequence] += "_" + seqname
 	
 		# Write the clean sequences
 	
@@ -74,10 +113,11 @@ def filter_input_file(fasta_file_path,por_n=100,min_length=0):
 		fout = fasta_file_path.with_name("Filt_" + fasta_file_path.name)
 		fname = fout.name
 		with open(fout, "w+") as output_file:
-			for sequence in sequences:
-				output_file.write(">" + sequences[sequence] + "\n" + sequence + "\n")
+			for sequence in final_sequences:
+				output_file.write(">" + final_sequences[sequence] + "\n" + sequence + "\n")
 		return fname
-	fname = _sequence_cleaner(fasta_file_path,por_n, min_length)
+	sequences = _sequence_cleaner(fasta_file_path)
+	fname = _remove_problematic_seqs(sequences,por_n, min_length)
 	logging.info(" Cleaned the fasta file %s at N percentage %d "%(fasta_file_path.name,por_n))
 	return fname
 
@@ -93,6 +133,7 @@ def dir_priviledges(path):
 
 # TODO: Verify integrity of params file?
 # Check if all the prerequired fields are present ? This means that it will make a large excel file
+
 
 def clean_tmp_dir(path):
 	pass

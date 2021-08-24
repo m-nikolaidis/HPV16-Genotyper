@@ -1,8 +1,7 @@
 # The tool
-
-For wsl pyside6 needs libxkbcommon-x11-0.
-`sudo apt-get install -y libxkbcommon-x11-0.`
-
+The tool in CLI has been tested to run in Linux, WSL and Windows (W10).
+CHeck in new install of windows if the binaries run correctly
+----------------------------------------------------------------------
 # Use DataFrame.to_markdown for the parameters excel
 
 # Write in MD, that the user should have the required priviledges in the chosen output directory
@@ -15,7 +14,7 @@ From params.py
 	Evalue notation accepts both scientific and floating point (due to pandas)
 	Word_size should be int >= 4
 	num_threads is system threads - 2 by default
-	Currently using blast+ 2.11.0
+	Currently using blast+ 2.11.0 #TODO: Update, 2.12
 	All the files should be put in the desired input directory, except for the params excel. which can be wherever
 	The database and query should be only the file names. Not the paths
 	Do not delete the first line of the excel file that has the word Value. It is needed by the script
@@ -34,20 +33,19 @@ TODO: Add list of all possibilities for non-cli users
 Add something about the workflow on the MD file?
 """
 
+### Recombinant sequences
+Recombinant sequences are considered sequences with conflicting lineaeges in the gene identification results
+
 # Phylogeny
 ## Profile alignment
-Write in MD. We are using muscle profile alignment to save computational time and storage space.
-Also write in MD. Muscle and seaview binaries are taken from wsl compiles. Work on WSL. 
+We are using muscle profile alignment to save computational time and storage space.
+Muscle and seaview binaries are taken from wsl compiles. Work on WSL. 
 Check versions to add to MD
 
 ## Trees
-The build_tree runs correctly in WSL
+Trees are built with PhyML by default
 
-# Graphical outputs
-## Gene best hits
- requires an active internet connection to view the plotly graphs
-
-# Annotation
+# SNP Annotation
 ## Create SNP annotation file
 Input excel must have the specific format
 Ref genomic position	A	B	C	D
@@ -61,3 +59,21 @@ make the above thing a table
 
 create_annot_file function:
 Prefix and empty should be provided from user, default Lin_, Other
+
+# Graphical outputs
+SNP graphical outputs are a bit buggy in the windows execution
+TODO: Need to investigate
+## Gene best hits
+ requires an active internet connection to view the plotly graphs
+
+## SNPs
+This plot renames all the SNPs (Non A,B,C,D, BCD) who are not specified in color_dict as Other
+requires an active internet connection to view the plotly graphs
+
+## Tree visualizations (interactive)
+
+## Tree rendering
+
+# The time consuming functions have on-off switch
+Blastn search and phylogentic tree construction
+Going to use them as checkpoints

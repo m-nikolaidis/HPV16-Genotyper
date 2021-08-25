@@ -70,7 +70,7 @@ def main(paramsdf, exe=True):
 			phyml_bin = os.path.join(str(pathlib.Path(__file__)), 
 				str(pathlib.Path('../resources/Win_bin/PhyML-3.1_win32.exe'))).replace(os.path.basename(__file__) + "\\", "")
 			raise Warning("Windows BLAST fails for some reason when using biopython, but runs correctly from PowerShell")
-			# TODO: Investigate
+			# TODO: Investigate the warning
 		if "linux" in system:
 			makeblastdb_bin = os.path.join(str(pathlib.Path(__file__)), 
 				str(pathlib.Path('../resources/Linux_bin/makeblastdb'))).replace(os.path.basename(__file__) + "/", "")
@@ -86,12 +86,21 @@ def main(paramsdf, exe=True):
 
 	# Basic variables
 	outdir = pathlib.Path(paramsdf.loc["out","Value"])
-
 	env_setup.create_dirs(outdir, exist_ok=True)
+
 	logfile = outdir / pathlib.Path("logfile.log")
-	logging.basicConfig(filename=logfile, format='%(asctime)s %(message)s', level=logging.DEBUG, filemode="w")
-	logging.info(" Loaded parameters file successfully ")
-	logging.info(" Environment set successfully in dir %s" %(outdir))
+	logger = logging.getLogger()
+	fhandler = logging.FileHandler(filename=logfile)
+	formatter = logging.Formatter("%(asctime)s\t%(message)s")
+	fhandler.setFormatter(formatter)
+	logger.addHandler(fhandler)
+	logger.setLevel(logging.DEBUG)
+	logging.info("Environment set successfully in dir %s" %(outdir))
+	logging.info("Parameters used in this run: ")
+	indeces = paramsdf.index
+	for index in indeces:
+		val = paramsdf.loc[index,"Value"]
+		logging.info(F"param: {index},{val}")
 
 	system = paramsdf.loc["system","Value"]
 	indir = pathlib.Path(paramsdf.loc["in","Value"])
@@ -108,9 +117,6 @@ def main(paramsdf, exe=True):
 	query_f_path = indir / query_f
 	env_setup.dir_priviledges(outdir)
 	
-	# FOR TESTING
-	exe = False # TODO: Remove after testing
-
 	# BLASTn search
 	workflow = "gene identification"
 	geneid_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
@@ -127,6 +133,7 @@ def main(paramsdf, exe=True):
 	trees_dir = phylogeny.build_trees(outdir, aln_files, phyml_bin, seaview_bin, exe=exe)
 	
 	# Clean tmp directory if user wants to save space before graphics
+	# TODO: Implement
 	
 	geneid_res_df = pd.read_excel(geneid_blastn_res_path_xlsx, engine="openpyxl")
 	color_dict = {

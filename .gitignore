@@ -72,6 +72,9 @@ __pypackages__/
 # Cython debug symbols
 cython_debug/
 
+# Vscode folder
+src/.vscode
+
 # Custom folders and files
 Script_out_Linux
 Script_out_Win
@@ -84,3 +87,6 @@ src/tmp
 ideas
 resources/sequences/tmp
 src/mock*
+src/sampleOut
+src/logfile.log
+src/ete3_custom

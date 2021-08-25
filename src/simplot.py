@@ -6,21 +6,23 @@ from Bio import SeqIO, AlignIO
 # TODO: Need to make this global, don't initialise it everytime simplot is run
 # seqs = SeqIO.to_dict(SeqIO.parse(file,"fasta"))
 
-def isolate_sequence(seqs_dict,seq):
+def isolate_sequence(seqs_dict,seq, outpath):
 	"""
 	Write the selected sequence in a temporary file in order to create a simplot
 	"""
 	randname = random.randit(0,100000000000)
-	fout =  PATH + str(randname) + ".fa"
+	fout =  outpath + str(randname) + ".fa"
+	
 
 
-def align(muscle_bin, db_gene_f):
+def align(muscle_bin, db_gene_f, f):
 	"""
 	Profile alignment the desired sequence with the 4 represenatives (A-D 1)
 	Profile alignment is used to gain speed
 	The A-D sequence database is already aligned with mafft g-insi parameters (DOI:10.1093/nar/gkf436)
 	"""
 	aln_cline = MuscleCommandline(cmd = muscle_bin, in1=f, in2=db_gene_f, out=f, profile=True)
+	aln_cline()
 
 def calculate_similarities(qseq, aln_f, step, window):
 	"""

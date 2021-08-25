@@ -1,10 +1,11 @@
 import os
 import re
 import sys
-from typing import Sequence
+# from typing import Sequence
 import wrapper # Tool module
 import simplot # Tool module
 import pathlib
+import logging
 import pandas as pd
 import pyqtgraph as pg
 import plotly.express as px
@@ -51,7 +52,7 @@ class Worker(QObject):
 		# TODO: Uncomment after testing
 		wrapper.main(paramsdf)
 		self.finished.emit()		
-		return 
+		return
 
 class Main_page(QMainWindow):
 	def __init__(self, parent=None):
@@ -65,7 +66,7 @@ class Main_page(QMainWindow):
 		self.pipelineWidget = QLabel("Executing pipeline... please wait")
 		self.pipelineWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 
-		self.finishedWidget = QLabel("Finished!")
+		self.finishedWidget = QLabel("Finished! \n Please don't delete the logfile")
 		self.finishedWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 		
 		self.table = QTableWidget()
@@ -87,26 +88,27 @@ class Main_page(QMainWindow):
 		# To keep the pages that are opened as extra windows
 		self.openWindows = {}
 
+
 	def _createMenus(self):
 		menuBar = QMenuBar(self)
 		self.setMenuBar(menuBar)
-		# File
+		# File menu
 		fileMenu = QMenu("&File", self)
 		menuBar.addMenu(fileMenu)
 		fileMenu.addAction(self.loadFasta)
 		fileMenu.addAction(self.loadOutdir)
-		fileMenu.addAction(self.loadResults)
+		fileMenu.addAction(self.loadResultsAction)
 		fileMenu.addAction(self.exit)
-		# Execute
+		# Execute menu
 		executeMenu = QMenu("&Execute", self)
 		menuBar.addMenu(executeMenu)
 		executeMenu.addAction(self.pipelineAnalysis)
 		executeMenu.addAction(self.individualAnalysis)
-		# Options
+		# Options menu
 		optionsMenu = QMenu("&Options", self)
 		menuBar.addMenu(optionsMenu)
 		optionsMenu.addAction(self.cleanTmp)
-		# Help
+		# Help menu
 		helpMenu = QMenu("&Help", self)
 		menuBar.addMenu(helpMenu)
 		helpMenu.addAction(self.documentation)
@@ -116,7 +118,7 @@ class Main_page(QMainWindow):
 		# File actions
 		self.loadFasta = QAction("&Load Fasta file",self)
 		self.loadOutdir = QAction("&Select output directory",self)
-		self.loadResults = QAction("Load &results directory",self)
+		self.loadResultsAction = QAction("Load &results directory",self)
 		self.exit = QAction("&Exit",self)
 		# Execute actions
 		self.pipelineAnalysis = QAction("Run &pipeline")
@@ -149,7 +151,7 @@ class Main_page(QMainWindow):
 		# File connected actions		
 		self.loadFasta.triggered.connect(lambda _: self.getFastaFile())
 		self.loadOutdir.triggered.connect(lambda _: self.getOutdir())
-		self.loadResults.triggered.connect(lambda _: self.getResdir())
+		self.loadResultsAction.triggered.connect(lambda _: self.getResdir())
 		self.exit.triggered.connect(sys.exit)
 
 		# Execute connected actions
@@ -207,55 +209,80 @@ class Main_page(QMainWindow):
 	def getResdir(self):
 		response = QFileDialog.getExistingDirectory(
 			parent=self,
-			caption="Select output directory",
+			caption="Select the results directory",
 			)
 		if response == "":
 			return
 		else:
-			self.resdir = pathlib.Path(response)
-			self.paramsdf.loc["out"] = str(self.resdir)
+			self.outdir = pathlib.Path(response)
+			self.paramsdf.loc["out"] = str(self.outdir)
+			logfile = self.outdir / pathlib.Path("logfile.log")
+			if not logfile.exists:
+				raise Exception("Cannot load results. LOGFILE has been deleted")
+				# TODO: Make this appear in the warning window
+				# TODO: Make warning window a panel for the main page?
+			
+			# When the results are fetched from the completed dir
+			# paramsdf needs to be initialized.  The logfile comes handy
+			self.paramsdf = pd.DataFrame(index=[],columns=["Value"])
+			fin = open(logfile,"r")
+			for line in fin.readlines():
+				m = re.match(r".+\tparam: (\S+),(\S+)",line)
+				if m:
+					index, val = m.group(1), m.group(2)
+					if "/" or "\\" in val:
+						val = pathlib.Path(val)	
+					self.paramsdf.loc[index] = val
+			self.showResults()
 
-	def execPipeline(self):
+	def execPipeline(self, exe=True):
+		"""
+		By default the whole pipeline will be executed. It will create another thread to run, so the application doesn't freeze
+		Step 1: Create the worker class that will execute all the necessary functions
+		Step 2: Create the QThread
+		Step 3: Create the worker object
+		Step 4: Move the worker to the QThread
+		Step 5: Connect the various signals from and to the worker
+		Step 6: Start the thread
+		Step 7: Clear the central widget and print the final results
+		If the results are just needed to be loaded, the pipeline won't be executed but the function will be used to visualize the results 
+		"""
+		# for handler in logging.root.handlers[:]:
+		# 	logging.root.removeHandler(handler)
+
 		
-		# Step 2: Create a QThread object
-		self.thread = QThread()
-		# Step 3: Create a worker object
-		self.worker = Worker()
-		# Step 4: Move worker to the thread
-		self.worker.moveToThread(self.thread)
-		# Step 5: Connect signals and slots
-
-		self.thread.started.connect(self.worker.runPipeline)
-		self.worker.finished.connect(self.thread.quit)
-		self.worker.finished.connect(self.worker.deleteLater)
-		self.thread.finished.connect(self.thread.deleteLater)
-		# Step 6: Start the thread
-		self.thread.start()
-		self.setCentralWidget(self.pipelineWidget)
-
-		# Step 7: Print finished message and show the results
-		self.thread.finished.connect(lambda: self.setCentralWidget(self.finishedWidget))
-		self.thread.finished.connect(lambda: self.showResults())		
+		# TODO: If i use a dictionary for the various panels (widgets) could i display each one i want each time without destroying the previous
+		self.thread = QThread() # Step 2
+		self.worker = Worker() # Step 3
+		self.worker.moveToThread(self.thread) # Step 4
+		self.thread.started.connect(self.worker.runPipeline) # Step 5
+		self.worker.finished.connect(self.thread.quit) # Step 5
+		self.worker.finished.connect(self.worker.deleteLater) # Step 5
+		self.thread.finished.connect(self.thread.deleteLater) # Step 5
+		self.thread.start() # Step 6
+		self.setCentralWidget(self.pipelineWidget) # Step 7
+		self.thread.finished.connect(lambda: self.setCentralWidget(self.finishedWidget)) # Step 7
+		self.thread.finished.connect(lambda: self.showResults()) # Step 7
 		
 	def showError(self, error):
 		pass
 	
-	# def show_results(self):
-	# 	resW = Results_page()
-	# 	resW.show()
-
+	def showResults(self):
+		if "Results" not in self.openWindows:
+			self.page = Results_page(self)
+			self.openWindows["Results"] = self.page
+		self.openWindows["Results"].show()
+	
 	def closeEvent(self, event):
 		reply = QMessageBox.question(self, 'Window Close', 'Do you want to close this window and terminate the application?',
 				QMessageBox.Yes | QMessageBox.No)
 		if reply == QMessageBox.Yes:
 			event.accept()
+			logging.shutdown()
 		else:
 			event.ignore()
 
-	def showResults(self):
-		self.page = Results_page(self)
-		self.openWindows["Results"] = self.page
-		self.page.show()
+
 		
 class Progress_widget(QWidget):
 	"""
@@ -264,7 +291,6 @@ class Progress_widget(QWidget):
 	"""
 	# TODO: Finish this
 	pass
-
 
 class Error_page(QWidget):
 	"""
@@ -287,8 +313,9 @@ class Error_page(QWidget):
 		self.mainLayout.addWidget(self.FileRead)
 		self.setLayout(self.mainLayout)
 
-# TODO: Need to fix in results page
+
 """
+TODO: Need to fix in results page
 1. Once i click in a recombinant sequence it automatically fixes the window and cannot resize
 2. Add box to search threw the list widget
 """
@@ -296,17 +323,29 @@ class Results_page(QMainWindow):
 	def __init__(self, parent=None):
 		super().__init__(parent)
 		self.setWindowTitle("Results")
-
 		self.centralWidget = QWidget()
-
 		self.centralWidget.mainLayout = QGridLayout()
+
+		# Initialize parameters that are needed
+		self.outdir = mainW.outdir
+		self.fasta_f = mainW.fasta_path
+		print(self.fasta_f)
 		self.genes = ["E6", "E7", "E1", "E2", "E4", "E5", "L2", "L1"]
 		self.gene_name_regex = re.compile(r"^\S+_(\S+)_aln.+$")
+
+		self.dfBlast = pd.read_excel(self.outdir / "Filt_mock_GeneID_Blastn_res_GeneID.xlsx", engine="openpyxl")
+		self.dfSNP = pd.read_excel(self.outdir / "SNPs_results.xlsx", engine="openpyxl")
+		self.recgID_for_graphdf = pd.read_excel(self.outdir / "RecOnlyGeneID_to_usedf.xlsx", engine="openpyxl", index_col=0)
+		self.recSNP_for_graphdf = pd.read_excel(self.outdir / "RecOnlySNP_to_usedf.xlsx", engine="openpyxl", index_col=0)
+
+		self.recSeqsList = ["MG850175.1","MG850176.1","MG850177.1","MG850178","MG850179","MG850180","MG850181","MG850182","MG850183","MG850184","MG850185","MG850186","MG850187","MG850188","MG850189","MG850190","MG850191","MG850192","MG850193","MG850194","MG850195","MG850196","MG850197","MG850198","MG850199","MG850200","MG850201","MG850202","MG850203","MG850204","MG850205","MG850206","MG850207","MG850208","MG850209","MG850210","MG850211","MG850212","MG850213","MG850214","MG850215","MG850216","MG850217","MG850218","MG850219","MG850220","MG850221","MG850222","MG850223","MG850224","MG850225","MG850226","MG850227","MG850228","MG850229","MG850230","MG850231","MG850232","MG850233","MG850234","MG850235","MG850236","MG850237","MG850238","MG850239","MG850240","MG850241","MG850242","MG850243","MG850244","MG850245","MG850246","MG850247","MG850248","MG850249","MG850250","MG850251","MG850252","MG850253","MG850254","MG850255","MG850256","MG850257","MG850258","MG850259","MG850260","MG850261","MG850262","MG850263","MG850264","MG850265","MG850266","MG850267","MG850268","MG850269","MG850270","MG850271","MG850272","MG850273","MG850274","MG850275","MG850276","MG850277","MG850278","MG850279","MG850280","MG850281","MG850282","MG850283","MG850284","MG850285","MG850286","MG850287","MG850288","MG850289"]
+		# TODO: Need to make recSeqsList variable and automatically returned 
+
 		# Accept a list of pathlib Paths for the phylogenetic trees
-		
-		trees_dir = "tmp/trees"
-		trees = os.listdir(trees_dir)
-		trees = [pathlib.Path(trees_dir) / t for t in trees]
+
+		self.trees_dir = self.outdir/"Phylogenetic_Trees"
+		trees = os.listdir(self.trees_dir)
+		trees = [pathlib.Path(self.trees_dir) / t for t in trees]
 		
 		self.trees_l = trees
 		self.trees = {}
@@ -314,8 +353,29 @@ class Results_page(QMainWindow):
 			m = re.match(self.gene_name_regex, t.name)
 			gene = m.group(1)
 			self.trees[gene] = Tree(str(t))
-
-		self.outdir = mainW.outdir
+		
+		# HardCoded stuff for the testing
+		self.recombinationStatus = {
+		"MG850175.1":{"Genes":1,"SNP":1},
+		"MG850176.1":{"Genes":0,"SNP":1}
+		} # This is for the LEDs
+		# /HardCoded stuff for the testing
+		
+		self.geneIDcolor_dict = {
+		"A":"#00ff00",
+		"B":"#0080ff",
+		"C":"#ff8000",
+		"D":"#ff0000"
+		}
+		self.snp_color_dict = {
+		"Lin_A":"#00ff00",
+		"Lin_B":"#0080ff",
+		"Lin_C":"#ff8000",
+		"Lin_D":"#ff0000",
+		"Lin_BCD":"#ebeb34",
+		"Other":"#ffffff"
+		}
+		
 
 		# Add tabs
 		self.tabs = QTabWidget()
@@ -421,7 +481,7 @@ class Results_page(QMainWindow):
 		# Create the scrollable list view
 		self.RecTab.listview = QListWidget()
 		self.RecTab.listview.resize(100,100)
-		self.RecTab.listview.addItems(filenames)
+		self.RecTab.listview.addItems(self.recSeqsList)
 		# Add action in double click signal
 		self.RecTab.listview.itemDoubleClicked.connect(self.displaySeqBlastResData)
 		self.RecTab.listview.itemDoubleClicked.connect(self.displayGeneIDGraph)
@@ -429,44 +489,13 @@ class Results_page(QMainWindow):
 		self.RecTab.listview.itemDoubleClicked.connect(self.displaySNPGraph)
 		self.RecTab.listview.itemDoubleClicked.connect(self.updateRecLED)
 		
-		# # HardCoded stuff for the testing
-		self.genes = ["E6", "E7", "E1", "E2", "E4", "E5", "L2", "L1"]
-		self.gene_name_regex = re.compile(r"^\S+_(\S+)_aln.+$")
-		self.trees = {}
-		self.trees_l = trees
-		for t in self.trees_l:
-			m = re.match(self.gene_name_regex, t.name)
-			gene = m.group(1)
-			self.trees[gene] = Tree(str(t))
-		self.recombinationStatus = {
-		"MG850175.1":{"Genes":1,"SNP":1},
-		"MG850176.1":{"Genes":0,"SNP":1}
-		}
-		self.geneIDcolor_dict = {
-		"A":"#00ff00",
-		"B":"#0080ff",
-		"C":"#ff8000",
-		"D":"#ff0000"
-		}
-		self.snp_color_dict = {
-		"Lin_A":"#00ff00",
-		"Lin_B":"#0080ff",
-		"Lin_C":"#ff8000",
-		"Lin_D":"#ff0000",
-		"Lin_BCD":"#ebeb34",
-		"Other":"#ffffff"
-		}
+
 
 		self.RecTabLayout = QHBoxLayout()
-		
-		# Some tmp variables to test
-		self.RecTab.RecSeqsList = ["MG850175","MG850176","MG850177","MG850178","MG850179","MG850180","MG850181","MG850182","MG850183","MG850184","MG850185","MG850186","MG850187","MG850188","MG850189","MG850190","MG850191","MG850192","MG850193","MG850194","MG850195","MG850196","MG850197","MG850198","MG850199","MG850200","MG850201","MG850202","MG850203","MG850204","MG850205","MG850206","MG850207","MG850208","MG850209","MG850210","MG850211","MG850212","MG850213","MG850214","MG850215","MG850216","MG850217","MG850218","MG850219","MG850220","MG850221","MG850222","MG850223","MG850224","MG850225","MG850226","MG850227","MG850228","MG850229","MG850230","MG850231","MG850232","MG850233","MG850234","MG850235","MG850236","MG850237","MG850238","MG850239","MG850240","MG850241","MG850242","MG850243","MG850244","MG850245","MG850246","MG850247","MG850248","MG850249","MG850250","MG850251","MG850252","MG850253","MG850254","MG850255","MG850256","MG850257","MG850258","MG850259","MG850260","MG850261","MG850262","MG850263","MG850264","MG850265","MG850266","MG850267","MG850268","MG850269","MG850270","MG850271","MG850272","MG850273","MG850274","MG850275","MG850276","MG850277","MG850278","MG850279","MG850280","MG850281","MG850282","MG850283","MG850284","MG850285","MG850286","MG850287","MG850288","MG850289"]
-		self.RecTab.RecSeqsList = ["MG850175","MG850176","MG850177"]
 		
 		# Create scroll area to add sequence names as buttons to show the different widgets
 		# Scroll area
 		# Set up the buttons
-		#############################################
 		
 		# Label of each box
 		self.RecTab.blastResLabelBox = QWidget()
@@ -540,6 +569,7 @@ class Results_page(QMainWindow):
 		# Sort images correctly
 		# highlight_dir = self.outdir / pathlib.Path("Graphics\\Trees_images")
 		highlight_dir = pathlib.Path("mock_2021_08_24/Graphics/Trees_images")
+		# TODO: Make this variable
 		self.tree_files = os.listdir(highlight_dir)
 		self.tree_files = [pathlib.Path(f) for f in self.tree_files]
 		self.tree_files_d = {}
@@ -644,10 +674,10 @@ class Results_page(QMainWindow):
 	def displaySeqBlastResData(self, excel_path):
 		self.RecTab.recseq = self.RecTab.listview.currentItem().text()
 		self.RecTab.blastResTable.clear()
-		if dfBlast.size == 0:
+		if self.dfBlast.size == 0:
 			return
-		dfBlast.fillna('', inplace=True)
-		tmpdf = dfBlast[dfBlast["qaccver"] == self.RecTab.recseq]
+		self.dfBlast.fillna('', inplace=True)
+		tmpdf = self.dfBlast[self.dfBlast["qaccver"] == self.RecTab.recseq]
 		self.RecTab.blastResTable.setRowCount(tmpdf.shape[0])
 		self.RecTab.blastResTable.setColumnCount(tmpdf.shape[1])
 		self.RecTab.blastResTable.setHorizontalHeaderLabels(tmpdf.columns)
@@ -665,7 +695,7 @@ class Results_page(QMainWindow):
 
 	def displayGeneIDGraph(self):
 		self.RecTab.geneIDBrowser = QWebEngineView()
-		tmpdf = recgID_for_graphdf[recgID_for_graphdf["Sequences"] == self.RecTab.recseq]
+		tmpdf = self.recgID_for_graphdf[self.recgID_for_graphdf["Sequences"] == self.RecTab.recseq]
 		tmpdf = tmpdf.sort_values("qstart")
 		fig = px.scatter(tmpdf, x="Gene", y="Sequences", size="pident", color="Lineage",text="Database",
 		hover_data=["Database","qstart","qend","pident"], title="Gene identification recombinant sequences", 
@@ -678,10 +708,10 @@ class Results_page(QMainWindow):
 
 	def displaySeqSNPResData(self, excel_path):
 		self.RecTab.SnpResTable.clear()
-		if dfSNP.size == 0:
+		if self.dfSNP.size == 0:
 			return
-		dfSNP.fillna('', inplace=True)
-		tmpdf = dfSNP[dfSNP["Index"] == self.RecTab.recseq]
+		self.dfSNP.fillna('', inplace=True)
+		tmpdf = self.dfSNP[self.dfSNP["Index"] == self.RecTab.recseq]
 		self.RecTab.SnpResTable.setRowCount(tmpdf.shape[0])
 		self.RecTab.SnpResTable.setColumnCount(tmpdf.shape[1])
 		self.RecTab.SnpResTable.setHorizontalHeaderLabels(tmpdf.columns)
@@ -700,7 +730,7 @@ class Results_page(QMainWindow):
 
 	def displaySNPGraph(self):
 		self.RecTab.snpBrowser = QWebEngineView()
-		tmpdf = recSNP_for_graphdf[recSNP_for_graphdf["Sequences"] == self.RecTab.recseq]
+		tmpdf = self.recSNP_for_graphdf[self.recSNP_for_graphdf["Sequences"] == self.RecTab.recseq]
 		fig = px.scatter(tmpdf, x="SNP reference pos", y="Sequences", color="Lineage",
 			hover_data=["SNP reference pos","Lineage","Nucleotide"], title="SNP identification recombinant sequences", 
 			color_discrete_map=self.snp_color_dict
@@ -717,15 +747,25 @@ class Results_page(QMainWindow):
 
 	def createSimplot(self):
 		test = "A2_refgenome"
-		# simplotW = Simplot_page(self.RecTab.recseq)
-		self.simplotW = Simplot_page(test, 300, 20) # TODO: Need to make these variable
-		print(self.simplotW)
-		mainW.openWindows["Simplot"] = self.simplotW
-		self.simplotW.show()
-		print(mainW.openWindows)
+		self.RecTab.recseq = test
+		print(self.RecSeqsTab.recseq)
+		print(self.outdir)
+		simplot.isolate_sequence()
+		print(self.RecTab.windowSizeSpinBox.value)
+		# self.simplotW = Simplot_page(self.RecTab.recseq, 300, 20, self.aln_f) # TODO: Need to make these variable
+		# print(self.simplotW)
+		# mainW.openWindows["Simplot"] = self.simplotW
+		# self.simplotW.show()
+		# print(mainW.openWindows)
+
+	# Closing the results and reloading them in the same application session
+	# throws the following errors and creates an infinite loop
+	# opengl direct render is enabled on my machine
+	# QQuickWidget: Failed to make context current
+	# QQuickWidget::resizeEvent() no OpenGL context
 
 class Simplot_page(QMainWindow):
-	def __init__(self, sequence, window_size, step, parent=None):
+	def __init__(self, sequence, window_size, step, aln_f, parent=None):
 		super().__init__(parent)
 		self.setWindowTitle("Similarity plot")
 		self.resize(1000,1000)
@@ -733,8 +773,8 @@ class Simplot_page(QMainWindow):
 		self.setStyleSheet("background: 'white'")
 		# Hard coded for testing
 		self.qseq = sequence
-		print(self.qseq)
-		self.aln_f = pathlib.Path("tmp/A2_refgenome_aln.fa")
+		# self.aln_f = pathlib.Path("tmp/A2_refgenome_aln.fa")
+		self.aln_f = pathlib.Path(aln_f)
 		# Simplot creation parameters
 		self.wsize = window_size
 		self.step = step
@@ -801,7 +841,10 @@ class Simplot_page(QMainWindow):
 		# # TODO: Figure out what i need to do
 		# Modify plot
 		
-		self.title = ("<span style=\"color:black;font-size:10pt;background-color:#cffaf9\">Sequence: %s Sequence size: %s Alignment size: %s Window: %s Step: %s</span>" %(self.qseq,self.qseqSize,self.alnSize,self.wsize,self.step))
+		self.title = ("<span style=\"color:black;font-size:10pt;background-color:#cffaf9\">Sequence: %s Sequence size: %s Alignment size: %s Window: %s Step: %s</span>"
+		%(self.qseq,self.qseqSize,self.alnSize,self.wsize,self.step)
+		)
+
 		self.plot.setTitle(self.title)
 		self.plot.setLabel('left', 'Identity %', color="b")
 		self.plot.setLabel('bottom', 'Alignment position', color="b")
@@ -825,7 +868,7 @@ class Simplot_page(QMainWindow):
 		self.response = QFileDialog.getSaveFileName(
 			parent = self,
 			caption = "Save similarity plot image",
-			directory = f"{self.qseq} - Window size: {self.wsize} - Step: {str(self.step)}.jpg " ,
+			directory = f"{self.qseq} - Window size: {self.wsize} - Step: {str(self.step)}.jpg" ,
 			filter = file_filter,
 			initialFilter = file_filter
 		)
@@ -835,32 +878,18 @@ class Simplot_page(QMainWindow):
 		else:
 			return
 
-	def closeEvent(self, event):
-		reply = QMessageBox.question(self, 'Window Close', 'Are you sure you want to close the window?',
-				QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-		if reply == QMessageBox.Yes:
-			event.accept()
-			# simplot.rm_tmpfile(self.aln_f)
-			# TODO: Uncomment after testing
-		else:
-			event.ignore()
+	def closeEvent(self):
+		pass
+		# simplot.rm_tmpfile(self.aln_f)
+		# TODO: Uncomment after testing
 
 
 if __name__ == "__main__":
 	app = QApplication(sys.argv)
-	# There is a problem with the thread in the main page
 	mainW = Main_page()
-	# TODO: Main Window should be able to be closed
 	screen = app.primaryScreen()
-
-	# For testing
-	filenames = ["MG850175.1","MG850176.1","MG850177.1","MG850178","MG850179","MG850180","MG850181","MG850182","MG850183","MG850184","MG850185","MG850186","MG850187","MG850188","MG850189","MG850190","MG850191","MG850192","MG850193","MG850194","MG850195","MG850196","MG850197","MG850198","MG850199","MG850200","MG850201","MG850202","MG850203","MG850204","MG850205","MG850206","MG850207","MG850208","MG850209","MG850210","MG850211","MG850212","MG850213","MG850214","MG850215","MG850216","MG850217","MG850218","MG850219","MG850220","MG850221","MG850222","MG850223","MG850224","MG850225","MG850226","MG850227","MG850228","MG850229","MG850230","MG850231","MG850232","MG850233","MG850234","MG850235","MG850236","MG850237","MG850238","MG850239","MG850240","MG850241","MG850242","MG850243","MG850244","MG850245","MG850246","MG850247","MG850248","MG850249","MG850250","MG850251","MG850252","MG850253","MG850254","MG850255","MG850256","MG850257","MG850258","MG850259","MG850260","MG850261","MG850262","MG850263","MG850264","MG850265","MG850266","MG850267","MG850268","MG850269","MG850270","MG850271","MG850272","MG850273","MG850274","MG850275","MG850276","MG850277","MG850278","MG850279","MG850280","MG850281","MG850282","MG850283","MG850284","MG850285","MG850286","MG850287","MG850288","MG850289"]
-	dfBlast = pd.read_excel("tmp/TestExcel.xlsx", engine="openpyxl")
-	dfSNP = pd.read_excel("tmp/TestExcelSNP.xlsx", engine="openpyxl")
-	recgID_for_graphdf = pd.read_excel("tmp/RecOnlyGeneID_to_usedf.xlsx", engine="openpyxl", index_col=0)
-	recSNP_for_graphdf = pd.read_excel("tmp/RecOnlySNP_to_usedf.xlsx", engine="openpyxl", index_col=0)
-	
-	trees_dir = "tmp/trees"
-	trees = os.listdir(trees_dir)
-	trees = [pathlib.Path(trees_dir) / t for t in trees]
 	sys.exit(app.exec_())
+
+# TODO: Main Window should be able to be closed and not terminate the app?
+# TODO: Write in MD. Never remove the logfile. It is necessary for the applicationi
+# to continue the process

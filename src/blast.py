@@ -19,7 +19,7 @@ def blastn_search(exe_params,query_f_path, workflow,makeblastdb_bin,blastn_bin,e
 
 
 	if workflow == "HPV16 filter":
-		logging.info(" Starting BLASTn search to identify non HPV16 sequences")
+		logging.info("Starting - BLASTn search to identify non HPV16 sequences")
 		db_path = pathlib.Path(exe_params.loc['HPV_filter_db',"Value"])
 		db_file = db_path.name
 		blastres_f = query_f_path.stem + "_HPV16_Blastn_res.xml"
@@ -27,7 +27,7 @@ def blastn_search(exe_params,query_f_path, workflow,makeblastdb_bin,blastn_bin,e
 		word_size = exe_params.loc['Gene_identification_Word_size',"Value"]
 	
 	if workflow == "gene identification":
-		logging.info(" Starting BLASTn search for gene identification")
+		logging.info("Starting - BLASTn search for gene identification")
 		db_path = pathlib.Path(exe_params.loc['GenesRef_database',"Value"])
 		db_file = db_path.name
 		blastres_f = query_f_path.stem + "_GeneID_Blastn_res.xml"
@@ -35,13 +35,21 @@ def blastn_search(exe_params,query_f_path, workflow,makeblastdb_bin,blastn_bin,e
 		word_size = exe_params.loc['Gene_identification_Word_size',"Value"]
 	
 	if workflow == "snp":
-		logging.info(" Starting BLASTn search for SNP identification")
+		logging.info("Starting - BLASTn search for Lineage specific SNPs")
 		db_path = pathlib.Path(exe_params.loc['SNP_db_path',"Value"])
 		db_file = db_path.name
 		blastres_f = query_f_path.stem + "_Probe_Blastn_res.xml"
 		evalue = exe_params.loc["SNP_identification_Evalue","Value"]
 		word_size = exe_params.loc["SNP_identification_Word_Size","Value"]
 
+	if workflow == "cancer":
+		logging.info("Starting - BLASTn search for increased cancer risk SNPs")
+		db_path = pathlib.Path(exe_params.loc['cSNP_db_path',"Value"])
+		db_file = db_path.name
+		blastres_f = query_f_path.stem + "_cProbe_Blastn_res.xml"
+		evalue = exe_params.loc["SNP_identification_Evalue","Value"]
+		word_size = exe_params.loc["SNP_identification_Word_Size","Value"]
+	
 	tmp = pathlib.Path("tmp_dir")
 	dbout = outdir / tmp / db_file
 	blastres_f_path = outdir / blastres_f
@@ -65,7 +73,7 @@ def blastn_search(exe_params,query_f_path, workflow,makeblastdb_bin,blastn_bin,e
 	if exe:
 		makedb()
 		blastn_search()
-		logging.info(" Finished BLASTn search ")
+		logging.info("Finished - BLASTn search ")
 	return blastres_f_path
 
 def _sort_alphanumeric(iteratable):
@@ -88,7 +96,7 @@ def parse_GeneID_results(blastres_f_path, params, exe=True):
 			seqlen = len(str(seqrecord.seq))
 			dblengths[name] = seqlen
 		return dblengths
-	logging.info(" Parsing gene identification results ")
+	logging.info("Parsing - gene identification results ")
 	db_path = pathlib.Path(params.loc["GenesRef_database","Value"])
 	dblengths = _get_db_lengths(db_path)
 	blast_records= NCBIXML.parse(open(blastres_f_path))
@@ -133,8 +141,8 @@ def parse_GeneID_results(blastres_f_path, params, exe=True):
 					blast_res[qorg][gene]["send"] = send
 					blast_res[qorg][gene]["evalue"] = evalue
 					blast_res[qorg][gene]["length"] = hsp_len
-					blast_res[qorg][gene]["pident"] = pident
-					blast_res[qorg][gene]["subject_covhsp"] = round((hsp_len/dblengths[subjct])*100,4)
+					blast_res[qorg][gene]["pident"] = round((pident*100),3)
+					blast_res[qorg][gene]["subject_covhsp"] = round((hsp_len/dblengths[subjct])*100,3)
 
 	df_list = []
 	for k in blast_res:
@@ -145,17 +153,26 @@ def parse_GeneID_results(blastres_f_path, params, exe=True):
 	geneID_results_path = blastres_f_path.with_name(blastres_f_path.stem + "_GeneID.xlsx")
 	blastdf.to_excel(geneID_results_path,index=False)
 	return geneID_results_path
-
-def parse_SNP_results(blastres_f_path, exe=True):
+#TODO: Need to add more info in the cancer snps
+# Query position of SNP, ....
+def parse_SNP_results(blastres_f_path, exe=True, cancer=False):
 	"""
 	Reads the blast output files and ...
+	TODO: Write me
+	cancer parameter is used to differentiate from Lineage specific SNPs and cancer SNPs
 	Return None
 	"""
-	if not exe:
+	if cancer:
+		probe_results_path = blastres_f_path.with_name(blastres_f_path.stem + "_cSNP_nucl.xlsx")
+		logging.info("Parsing - increased cancer risk SNP results ")
+
+	else:
 		probe_results_path = blastres_f_path.with_name(blastres_f_path.stem + "_SNP_nucl.xlsx")
+		logging.info("Parsing - lineage specific SNP results ")
+
+	if not exe:
 		return probe_results_path
 	
-	logging.info(" Parsing SNP identification results ")
 	def _get_aln_nucl(query_aln,subjct_aln,sstart,probe_len):
 		# I have used this approach for the case that gaps are inserted in the subject seq
 		# If not return fixed position
@@ -222,7 +239,6 @@ def parse_SNP_results(blastres_f_path, exe=True):
 	probedf_cols = _sort_alphanumeric(probedf_cols)
 	probedf = probedf[probedf_cols]
 	probedf.index.name = "Sequences"
-	probe_results_path = blastres_f_path.with_name(blastres_f_path.stem + "_SNP_nucl.xlsx")
 	probedf.to_excel(probe_results_path,na_rep="X")
 	return probe_results_path
 
@@ -258,7 +274,7 @@ def filter_nonHPV16(blastres_f_path, params, exe=True, filter="HPV16"):
 	# 		seqlen = len(str(seqrecord.seq))
 	# 		dblengths[name] = seqlen
 	# 	return dblengths
-	# logging.info(" Identifying HPV16 sequences ")
+	# logging.info("Identifying HPV16 sequences ")
 	# db_path = pathlib.Path(params.loc["GenesRef_database","Value"])
 	# dblengths = _get_db_lengths(db_path)
 

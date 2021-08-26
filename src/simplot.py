@@ -1,28 +1,39 @@
-import random
 import pathlib
-from Bio import SeqIO, AlignIO
+import numpy as np
+from Bio import AlignIO
+from Bio.Align.Applications import MuscleCommandline
 # "Reference_genomes_profile_mafft_GINSI.fa"
 
-# TODO: Need to make this global, don't initialise it everytime simplot is run
-# seqs = SeqIO.to_dict(SeqIO.parse(file,"fasta"))
+# TODO: Need to make the seqs_dict global for the non gui script (Maybe i should just add the QApplication non GUI functionality)
+# So it doesn't get initialized everytime the function is called
 
-def isolate_sequence(seqs_dict,seq, outpath):
+def _isolate_sequence(seqs_dict, recseq, outpath):
 	"""
+	Helper function
 	Write the selected sequence in a temporary file in order to create a simplot
 	"""
-	randname = random.randit(0,100000000000)
-	fout =  outpath + str(randname) + ".fa"
+	randname = np.random.randint(0,100000000000)
+	fout =  outpath / pathlib.Path(str(randname) + ".fa")
+	sequence = str(seqs_dict[recseq].seq).upper()
+	fh = open(fout,"w")
+	str_to_write = F">{recseq}\n{sequence}\n"
+	fh.write(str_to_write)
+	fh.close()
+	return fout
 	
-
-
-def align(muscle_bin, db_gene_f, f):
+def align(muscle_bin, db_gene_f, seqs_dict, recseq, outpath):
 	"""
 	Profile alignment the desired sequence with the 4 represenatives (A-D 1)
 	Profile alignment is used to gain speed
 	The A-D sequence database is already aligned with mafft g-insi parameters (DOI:10.1093/nar/gkf436)
+	
+	First the helper function is going to create a temporary file which contains the desired sequence
+	Then the temporary file is going to be utilized for the profile alignment
 	"""
+	f = _isolate_sequence(seqs_dict, recseq, outpath)
 	aln_cline = MuscleCommandline(cmd = muscle_bin, in1=f, in2=db_gene_f, out=f, profile=True)
 	aln_cline()
+	return f
 
 def calculate_similarities(qseq, aln_f, step, window):
 	"""

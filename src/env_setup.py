@@ -35,9 +35,9 @@ def file_exists(f):
 	"""
 	exist = os.path.exists(f)
 	if not exist:
-		logging.critical("%s does not exist" %(f))
-		raise FileNotFoundError("%s does not exist" %(f))
-	logging.info(" %s exists" %(f))
+		logging.critical(F"{f} does not exist")
+		raise FileNotFoundError(F" {f} does not exist")
+	logging.info(F"{f} exists \u2705")
 
 def input_file_format(fasta_file_path):
 	"""Check if the input query file is in supported format
@@ -46,20 +46,20 @@ def input_file_format(fasta_file_path):
 	check_handle = open(fasta_file_path, "r")
 
 	if fasta_file_path.stat().st_size == 0:
-		logging.critical(" Input file is empty, check input file ")
+		logging.critical("Input file is empty, check input file ")
 		raise Exception(" Input file is empty, check input file ")
 	try:
 		first_line = check_handle.readline().rstrip()
 		if re.match(r'^>', first_line): # Is fasta
 			pass
 		else:
-			logging.critical(" The input file is not fasta ")
+			logging.critical("The input file is not fasta ")
 			raise Exception(" The input file is not fasta ")
 	except UnicodeError:
-		logging.critical(" The input file is not in plain text file format ")
+		logging.critical("The input file is not in plain text file format ")
 		raise Exception(" The input file is not in plain text file format ")
 	
-	logging.info( " Finished input file integrity check successfully ")
+	logging.info(F"Finished input file integrity check successfully \u2705")
 
 def filter_input_file(fasta_file_path,por_n=100,min_length=0):
 	"""Need to perform a rename in the input file or create a file with renamed values
@@ -118,7 +118,7 @@ def filter_input_file(fasta_file_path,por_n=100,min_length=0):
 		return fname
 	sequences = _sequence_cleaner(fasta_file_path)
 	fname = _remove_problematic_seqs(sequences,por_n, min_length)
-	logging.info(" Cleaned the fasta file %s at N percentage %d "%(fasta_file_path.name,por_n))
+	logging.info("Cleaned the fasta file %s at N percentage %d "%(fasta_file_path.name,por_n))
 	return fname
 
 def dir_priviledges(path):
@@ -127,14 +127,10 @@ def dir_priviledges(path):
 	"""
 	write_priviledges = os.access(path, os.W_OK)
 	if not write_priviledges:
-		logging.critical(" Program has no write permission on %s " %(path))
+		logging.critical(F"Program has no write permission on {path} \u274C")
 		raise PermissionError(" You dont have the required priviledges in the specified output directory ")
-	logging.info(" Permission to write on %s " %(path))
-
-# TODO: Verify integrity of params file?
-# Check if all the prerequired fields are present ? This means that it will make a large excel file
-
+	logging.info(F"Have permission to write on {path} \u2705")
 
 def clean_tmp_dir(path):
 	pass
-	logging.info(" Cleaning temporary directories ")
+	logging.info("Cleaning - temporary directories ")

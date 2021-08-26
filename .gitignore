@@ -90,3 +90,9 @@ src/mock*
 src/sampleOut
 src/logfile.log
 src/ete3_custom
+
+# MS office and simple text
+*.docx
+*.xlsx
+*.pptp
+*.txt

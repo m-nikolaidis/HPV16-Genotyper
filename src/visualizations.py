@@ -86,7 +86,6 @@ def SNP_fig(snp_resultsdf_annot, output_dir, color_dict, snp_resultsdf, recombin
 	recfig.write_html(html_outf,include_plotlyjs="cdn")
 	rec_only_df.to_excel(output_dir / "RecOnlySNP_to_usedf.xlsx")
 
-
 def render_trees(trees_dir, outdir, mode="jpeg"):
 	"""
 	Type of file to render the phylogenetic trees (Default jpg) \n available types: pdf, jpeg, png

@@ -15,33 +15,66 @@ import env_setup
 import phylogeny
 import visualizations
 
-def default_param_file(outdir):
+def _init_binaries(system):
+	"""Initialize the paths for the needed binaries depending on the system
+	input: System info
+	return: List of pathlib paths
+	"""
+	if "win" in system:
+		makeblastdb_bin = os.path.join(str(pathlib.Path(__file__)), 
+			str(pathlib.Path('../resources/Win_bin/makeblastdb.exe'))).replace(os.path.basename(__file__) + "\\", "")
+		blastn_bin = os.path.join(str(pathlib.Path(__file__)), 
+			str(pathlib.Path('../resources/Win_bin/blastn.exe'))).replace(os.path.basename(__file__) + "\\", "")
+		muscle_bin= os.path.join(str(pathlib.Path(__file__)), 
+			str(pathlib.Path('../resources/Win_bin/muscle3.8.31.exe'))).replace(os.path.basename(__file__) + "\\", "")
+		seaview_bin = os.path.join(str(pathlib.Path(__file__)), 
+			str(pathlib.Path('../resources/Win_bin/seaview.exe'))).replace(os.path.basename(__file__) + "\\", "")
+		phyml_bin = os.path.join(str(pathlib.Path(__file__)), 
+			str(pathlib.Path('../resources/Win_bin/PhyML-3.1_win32.exe'))).replace(os.path.basename(__file__) + "\\", "")
+		raise Warning("Windows BLAST fails for some reason when using biopython, but runs correctly from PowerShell")
+		# TODO: Investigate the warning
+	if "linux" in system:
+		makeblastdb_bin = os.path.join(str(pathlib.Path(__file__)), 
+			str(pathlib.Path('../resources/Linux_bin/makeblastdb'))).replace(os.path.basename(__file__) + "/", "")
+		blastn_bin = os.path.join(str(pathlib.Path(__file__)), 
+			str(pathlib.Path('../resources/Linux_bin/blastn'))).replace(os.path.basename(__file__) + "/", "")
+		muscle_bin = os.path.join(str(pathlib.Path(__file__)), 
+			str(pathlib.Path('../resources/Linux_bin/muscle3.8.31_i86linux'))).replace(os.path.basename(__file__) + "/", "")
+		seaview_bin = os.path.join(str(pathlib.Path(__file__)), 
+			str(pathlib.Path('../resources/Linux_bin/seaview4'))).replace(os.path.basename(__file__) + "/", "")
+		phyml_bin = os.path.join(str(pathlib.Path(__file__)), 
+			str(pathlib.Path('../resources/Linux_bin/PhyML-3.1_linux64'))).replace(os.path.basename(__file__) + "/", "")
+	return [makeblastdb_bin,blastn_bin,muscle_bin,seaview_bin,phyml_bin]
+
+def _defaultparams():
+	system = sys.platform
+	input_dir = pathlib.Path(os.getcwd()) / pathlib.Path("../input") # The user should provide the input dir cmd? just like the orthologues pipeline
+	query_f = pathlib.Path(os.getcwd()) / pathlib.Path("../input/Input.fasta") # The user should provide the input dir cmd? just like the orthologues pipeline
+	outdir = pathlib.Path(os.getcwd()) / pathlib.Path("../Script_out")
+	threads_to_use =  multiprocessing.cpu_count() - 2
+	params = {
+		"system": system,
+		"in": input_dir,
+		"out": outdir,
+		"num_threads": threads_to_use,
+		"query": query_f,
+		"SNP_identification_Evalue": 0.005,
+		"SNP_identification_Word_Size": 4,
+		"SNP_annotation_file": pathlib.Path(os.getcwd()) / pathlib.Path('../resources/SNPs_annotation.xlsx'),
+		"SNP_db_path": pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/NC_001526_probes.fa'),
+		"cSNP_db_path": pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/NC_001526_cancer_probes.fa'),
+		"Gene_identification_Evalue": 1e-5, 
+		"Gene_identification_Word_size": 7,
+		"GenesProfile_directory": pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/profiles'),
+		"GenesRef_database":pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/16refs_gene_db.fa'),
+		"SimplotRef_database":pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/Reference_genomes_profile_mafft_GINSI.fa')
+	}
+	return params
+
+def writeParamFile(outdir):
 	"""Intialize the default parameters and write them to the param.xlsx file
 	The user should have the option to output a reference param file and change it accordingly
 	"""
-	
-	def _defaultparams():
-		system = sys.platform
-		input_dir = pathlib.Path(os.getcwd()) / pathlib.Path("../input") # The user should provide the input dir cmd? just like the orthologues pipeline
-		query_f = pathlib.Path(os.getcwd()) / pathlib.Path("../input/Input.fasta") # The user should provide the input dir cmd? just like the orthologues pipeline
-		outdir = pathlib.Path(os.getcwd()) / pathlib.Path("../Script_out")
-		threads_to_use =  multiprocessing.cpu_count() - 2
-		params = {
-			"system": system,
-			"in": input_dir,
-			"out": outdir,
-			"num_threads": threads_to_use,
-			"query": query_f,
-			"SNP_identification_Evalue": 0.005,
-			"SNP_identification_Word_Size": 4,
-			"SNP_annotation_file":None, # TODO Implement the annotation file
-			"SNP_db_path": pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/NC_001526_probes.fa'),
-			"Gene_identification_Evalue": 1e-5, 
-			"Gene_identification_Word_size": 7,
-			"GenesProfile_directory": pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/profiles'),
-			"GenesRef_database":pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/16refs_gene_db.fa')
-		}
-		return params
 	if outdir.is_dir():
 		params_f = outdir / pathlib.Path("params.xlsx")
 	else:
@@ -53,55 +86,9 @@ def default_param_file(outdir):
 	param_df.to_excel(params_f)
 
 def main(paramsdf, exe=True):
-	def _init_binaries(system):
-		"""Initialize the paths for the needed binaries depending on the system
-		input: System info
-		return: List of pathlib paths
-		"""
-		if "win" in system:
-			makeblastdb_bin = os.path.join(str(pathlib.Path(__file__)), 
-				str(pathlib.Path('../resources/Win_bin/makeblastdb.exe'))).replace(os.path.basename(__file__) + "\\", "")
-			blastn_bin = os.path.join(str(pathlib.Path(__file__)), 
-				str(pathlib.Path('../resources/Win_bin/blastn.exe'))).replace(os.path.basename(__file__) + "\\", "")
-			muscle_bin= os.path.join(str(pathlib.Path(__file__)), 
-				str(pathlib.Path('../resources/Win_bin/muscle3.8.31.exe'))).replace(os.path.basename(__file__) + "\\", "")
-			seaview_bin = os.path.join(str(pathlib.Path(__file__)), 
-				str(pathlib.Path('../resources/Win_bin/seaview.exe'))).replace(os.path.basename(__file__) + "\\", "")
-			phyml_bin = os.path.join(str(pathlib.Path(__file__)), 
-				str(pathlib.Path('../resources/Win_bin/PhyML-3.1_win32.exe'))).replace(os.path.basename(__file__) + "\\", "")
-			raise Warning("Windows BLAST fails for some reason when using biopython, but runs correctly from PowerShell")
-			# TODO: Investigate the warning
-		if "linux" in system:
-			makeblastdb_bin = os.path.join(str(pathlib.Path(__file__)), 
-				str(pathlib.Path('../resources/Linux_bin/makeblastdb'))).replace(os.path.basename(__file__) + "/", "")
-			blastn_bin = os.path.join(str(pathlib.Path(__file__)), 
-				str(pathlib.Path('../resources/Linux_bin/blastn'))).replace(os.path.basename(__file__) + "/", "")
-			muscle_bin = os.path.join(str(pathlib.Path(__file__)), 
-				str(pathlib.Path('../resources/Linux_bin/muscle3.8.31_i86linux'))).replace(os.path.basename(__file__) + "/", "")
-			seaview_bin = os.path.join(str(pathlib.Path(__file__)), 
-				str(pathlib.Path('../resources/Linux_bin/seaview4'))).replace(os.path.basename(__file__) + "/", "")
-			phyml_bin = os.path.join(str(pathlib.Path(__file__)), 
-				str(pathlib.Path('../resources/Linux_bin/PhyML-3.1_linux64'))).replace(os.path.basename(__file__) + "/", "")
-		return [makeblastdb_bin,blastn_bin,muscle_bin,seaview_bin,phyml_bin]
-
 	# Basic variables
 	outdir = pathlib.Path(paramsdf.loc["out","Value"])
 	env_setup.create_dirs(outdir, exist_ok=True)
-
-	logfile = outdir / pathlib.Path("logfile.log")
-	logger = logging.getLogger()
-	fhandler = logging.FileHandler(filename=logfile)
-	formatter = logging.Formatter("%(asctime)s\t%(message)s")
-	fhandler.setFormatter(formatter)
-	logger.addHandler(fhandler)
-	logger.setLevel(logging.DEBUG)
-	logging.info("Environment set successfully in dir %s" %(outdir))
-	logging.info("Parameters used in this run: ")
-	indeces = paramsdf.index
-	for index in indeces:
-		val = paramsdf.loc[index,"Value"]
-		logging.info(F"param: {index},{val}")
-
 	system = paramsdf.loc["system","Value"]
 	indir = pathlib.Path(paramsdf.loc["in","Value"])
 	query_f = pathlib.Path(paramsdf.loc["query","Value"])
@@ -109,6 +96,22 @@ def main(paramsdf, exe=True):
 	makeblastdb_bin,blastn_bin,muscle_bin,seaview_bin,phyml_bin = _init_binaries(system)
 	annot_f = pathlib.Path(paramsdf.loc["SNP_annotation_file","Value"])
 	
+	# Grab the root logger instance and use it for logging
+	logfile = outdir / pathlib.Path("logfile.log")
+	logger = logging.getLogger()
+	fhandler = logging.FileHandler(filename=logfile)
+	formatter = logging.Formatter("%(asctime)s\t%(message)s")
+	fhandler.setFormatter(formatter)
+	logger.addHandler(fhandler)
+	logger.setLevel(logging.DEBUG)
+	logging.info(F"Environment set successfully in {outdir} \u2705")
+	logging.info("Parameters used in this run: ")
+	indeces = paramsdf.index
+	for index in indeces:
+		val = paramsdf.loc[index,"Value"]
+		logging.info(F"param: {index},{val}")
+
+
 	# Environment setup
 	env_setup.file_exists(query_f_path)
 	env_setup.input_file_format(query_f_path)
@@ -124,6 +127,9 @@ def main(paramsdf, exe=True):
 	workflow = "snp"
 	snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
 	snp_blastn_res_path_xlsx = blast.parse_SNP_results(snp_blastn_res_path, exe=exe)
+	workflow = "cancer"
+	C_snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
+	C_snp_blastn_res_path_xlsx = blast.parse_SNP_results(C_snp_blastn_res_path, exe=exe,cancer=True)
 	
 
 	# Gene alignments and trees
@@ -147,14 +153,15 @@ def main(paramsdf, exe=True):
 	
 	num_snps = annot.annotate_results(annot_f,snp_blastn_res_path_xlsx,exe=exe)
 	
-	snp_resultsdf = pd.read_excel(snp_blastn_res_path_xlsx,index_col=0, engine="openpyxl")
-	snp_resultsdf = snp_resultsdf.drop("Nucleotides")
-	snp_resultsdf = snp_resultsdf.T
-	snp_resultsdf = snp_resultsdf.head(num_snps)
-	snp_results_annot = outdir / "SNPs_results.xlsx"
-	snp_resultsdf_annot = pd.read_excel(snp_results_annot,index_col=0, engine="openpyxl")
-	snp_resultsdf_annot = snp_resultsdf_annot.T
-	snp_resultsdf_annot = snp_resultsdf_annot.head(num_snps)
+	# 
+	L_snp_resultsdf = pd.read_excel(snp_blastn_res_path_xlsx,index_col=0, engine="openpyxl")
+	L_snp_resultsdf = L_snp_resultsdf.drop("Nucleotides")
+	L_snp_resultsdf = L_snp_resultsdf.T
+	L_snp_resultsdf = L_snp_resultsdf.head(num_snps)
+	L_snp_results_annot = outdir / "SNPs_results.xlsx"
+	L_snp_resultsdf_annot = pd.read_excel(L_snp_results_annot,index_col=0, engine="openpyxl")
+	L_snp_resultsdf_annot = L_snp_resultsdf_annot.T
+	L_snp_resultsdf_annot = L_snp_resultsdf_annot.head(num_snps)
 	color_dict = {
 		"Lin_A":"#00ff00",
 		"Lin_B":"#0080ff",
@@ -163,7 +170,7 @@ def main(paramsdf, exe=True):
 		"Lin_BCD":"#ebeb34",
 		"Other":"#ffffff"
 	}
-	visualizations.SNP_fig(snp_resultsdf_annot, outdir, color_dict, snp_resultsdf, recombinants)
+	visualizations.SNP_fig(L_snp_resultsdf_annot, outdir, color_dict, L_snp_resultsdf, recombinants)
 
 	visualizations.render_trees(trees_dir, outdir)
 
@@ -191,7 +198,7 @@ if __name__ == "__main__":
 	start_dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
 	
 	if params_o:
-		default_param_file(params_o)
+		writeParamFile(params_o)
 		print("Created parameters file successfully, please rerun the script using the parameters file")
 		sys.exit(0) # Kill the CLI when outputing parameters file
 

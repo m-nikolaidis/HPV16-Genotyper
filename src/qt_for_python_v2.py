@@ -10,11 +10,11 @@ import pandas as pd
 import pyqtgraph as pg
 import plotly.express as px
 from datetime import date
+from Bio import SeqIO
 from QLed import QLed
-from pyqtgraph import PlotWidget, plot
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import ( 
-	Qt, QObject, QThread, 
+	QSortFilterProxyModel, Qt, QObject, QThread, 
 	pyqtSignal, QUrl
 )
 from PyQt5.QtWidgets import (
@@ -23,16 +23,17 @@ from PyQt5.QtWidgets import (
 	QStatusBar, QTableWidget, QTableWidgetItem, 
 	QFileDialog, QTabWidget, QGridLayout, QVBoxLayout,
 	QPushButton, QScrollArea, QHBoxLayout, QButtonGroup,
-	QPlainTextEdit, QMessageBox, QListWidget, QSpinBox
+	QPlainTextEdit, QMessageBox, QListWidget, QSpinBox,
+	QLineEdit
 )
 
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from ete3 import ( 
-	Tree, TreeStyle, TextFace, NodeStyle, CircleFace
+	Tree, TreeStyle, TextFace
 )
 
-#TODO: Better use QErrorMessage for errors
+#TODO: Use QErrorMessage for errors
 
 class Worker(QObject):
 	"""Use worker classes to give a multithreading behaviour to the application
@@ -77,13 +78,15 @@ class Main_page(QMainWindow):
 		self._createStatusBar()
 
 		# Init exec parameters
-		self.system = sys.platform
-		if "win" in self.system:
-			self.paramsdf = pd.read_excel(pathlib.Path(os.getcwd()) / pathlib.Path('../resources/params_win.xlsx'),index_col=0, engine="openpyxl")
-		if "linux" in self.system:
-			self.paramsdf = pd.read_excel(pathlib.Path(os.getcwd()) / pathlib.Path('../resources/params_linux.xlsx'),index_col=0, engine="openpyxl")
-
-		self.paramsdf.loc["system","Value"] = self.system
+		# if "win" in self.system:
+			# self.paramsdf = pd.read_excel(pathlib.Path(os.getcwd()) / pathlib.Path('../resources/params_win.xlsx'),index_col=0, engine="openpyxl")
+		# if "linux" in self.system:
+			# self.paramsdf = pd.read_excel(pathlib.Path(os.getcwd()) / pathlib.Path('../resources/params_linux.xlsx'),index_col=0, engine="openpyxl")
+	
+		params = wrapper._defaultparams()
+		# TODO: Possible error in windows from the initialization of the default parameters (forward slash)
+		self.paramsdf = pd.DataFrame.from_dict(params,orient='index')
+		self.paramsdf.rename(columns={0:"Value"},inplace=True)
 		self.show()
 		# To keep the pages that are opened as extra windows
 		self.openWindows = {}
@@ -97,7 +100,9 @@ class Main_page(QMainWindow):
 		menuBar.addMenu(fileMenu)
 		fileMenu.addAction(self.loadFasta)
 		fileMenu.addAction(self.loadOutdir)
+		fileMenu.addSeparator()
 		fileMenu.addAction(self.loadResultsAction)
+		fileMenu.addSeparator()
 		fileMenu.addAction(self.exit)
 		# Execute menu
 		executeMenu = QMenu("&Execute", self)
@@ -137,6 +142,7 @@ class Main_page(QMainWindow):
 
 		# Adding shortcuts
 		self.loadFasta.setShortcut("Ctrl+O")
+		self.pipelineAnalysis.setShortcut("Ctrl+E")
 
 		# Adding help tips
 		cleanTmpTip = "Delete temporary directories after executing the pipeline"
@@ -186,11 +192,12 @@ class Main_page(QMainWindow):
 			self.paramsdf.loc["out"] = str(self.outdir)
 			self.pipelineAnalysis.setEnabled(True)
 			self.individualAnalysis.setEnabled(True)
+			self.analyzedSeqs = list(SeqIO.index(str(self.fasta_path),"fasta").keys())
 		else:
 			return
 		
 		#TODO WRITE IN MD. If no output directory is specified the results are thrown into the script directory with the Fasta input
-		# filename and the current date
+		# filename prefix (without the extension) and the current date
 
 	def getOutdir(self):
 		"""
@@ -230,9 +237,11 @@ class Main_page(QMainWindow):
 				m = re.match(r".+\tparam: (\S+),(\S+)",line)
 				if m:
 					index, val = m.group(1), m.group(2)
-					if "/" or "\\" in val:
+					if re.match(r"\/|\\",val):
 						val = pathlib.Path(val)	
 					self.paramsdf.loc[index] = val
+			self.fasta_path = self.paramsdf.loc["query","Value"]
+			self.analyzedSeqs = list(SeqIO.index(str(self.fasta_path),"fasta").keys())
 			self.showResults()
 
 	def execPipeline(self, exe=True):
@@ -247,9 +256,6 @@ class Main_page(QMainWindow):
 		Step 7: Clear the central widget and print the final results
 		If the results are just needed to be loaded, the pipeline won't be executed but the function will be used to visualize the results 
 		"""
-		# for handler in logging.root.handlers[:]:
-		# 	logging.root.removeHandler(handler)
-
 		
 		# TODO: If i use a dictionary for the various panels (widgets) could i display each one i want each time without destroying the previous
 		self.thread = QThread() # Step 2
@@ -263,6 +269,7 @@ class Main_page(QMainWindow):
 		self.setCentralWidget(self.pipelineWidget) # Step 7
 		self.thread.finished.connect(lambda: self.setCentralWidget(self.finishedWidget)) # Step 7
 		self.thread.finished.connect(lambda: self.showResults()) # Step 7
+		# TODO: Uncomment after testing
 		
 	def showError(self, error):
 		pass
@@ -272,17 +279,27 @@ class Main_page(QMainWindow):
 			self.page = Results_page(self)
 			self.openWindows["Results"] = self.page
 		self.openWindows["Results"].show()
+		# This memoization actually yields a bug
+		# When i close the results and open another folder i get the same page
+		# If i add del or something i always get 
+		#QQuickWidget: Failed to make context current
+		#QQuickWidget::resizeEvent() no OpenGL context
+		# The error is produced when i initialize the Results QMainWindow
+		# after closing it and not terminating the app
+		# Maybe i can use the OpenGL widget?
 	
 	def closeEvent(self, event):
-		reply = QMessageBox.question(self, 'Window Close', 'Do you want to close this window and terminate the application?',
-				QMessageBox.Yes | QMessageBox.No)
+		self.quitMsg = QMessageBox()
+		reply = self.quitMsg.question(self, "Window Close", 
+		"Do you want to close this window?\nThe application will be terminated",
+		QMessageBox.Yes | QMessageBox.No
+		)
+
 		if reply == QMessageBox.Yes:
 			event.accept()
 			logging.shutdown()
 		else:
 			event.ignore()
-
-
 		
 class Progress_widget(QWidget):
 	"""
@@ -313,12 +330,6 @@ class Error_page(QWidget):
 		self.mainLayout.addWidget(self.FileRead)
 		self.setLayout(self.mainLayout)
 
-
-"""
-TODO: Need to fix in results page
-1. Once i click in a recombinant sequence it automatically fixes the window and cannot resize
-2. Add box to search threw the list widget
-"""
 class Results_page(QMainWindow):
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -329,19 +340,10 @@ class Results_page(QMainWindow):
 		# Initialize parameters that are needed
 		self.outdir = mainW.outdir
 		self.fasta_f = mainW.fasta_path
-		print(self.fasta_f)
+		self.system = mainW.paramsdf.loc["system","Value"]
+	
 		self.genes = ["E6", "E7", "E1", "E2", "E4", "E5", "L2", "L1"]
 		self.gene_name_regex = re.compile(r"^\S+_(\S+)_aln.+$")
-
-		self.dfBlast = pd.read_excel(self.outdir / "Filt_mock_GeneID_Blastn_res_GeneID.xlsx", engine="openpyxl")
-		self.dfSNP = pd.read_excel(self.outdir / "SNPs_results.xlsx", engine="openpyxl")
-		self.recgID_for_graphdf = pd.read_excel(self.outdir / "RecOnlyGeneID_to_usedf.xlsx", engine="openpyxl", index_col=0)
-		self.recSNP_for_graphdf = pd.read_excel(self.outdir / "RecOnlySNP_to_usedf.xlsx", engine="openpyxl", index_col=0)
-
-		self.recSeqsList = ["MG850175.1","MG850176.1","MG850177.1","MG850178","MG850179","MG850180","MG850181","MG850182","MG850183","MG850184","MG850185","MG850186","MG850187","MG850188","MG850189","MG850190","MG850191","MG850192","MG850193","MG850194","MG850195","MG850196","MG850197","MG850198","MG850199","MG850200","MG850201","MG850202","MG850203","MG850204","MG850205","MG850206","MG850207","MG850208","MG850209","MG850210","MG850211","MG850212","MG850213","MG850214","MG850215","MG850216","MG850217","MG850218","MG850219","MG850220","MG850221","MG850222","MG850223","MG850224","MG850225","MG850226","MG850227","MG850228","MG850229","MG850230","MG850231","MG850232","MG850233","MG850234","MG850235","MG850236","MG850237","MG850238","MG850239","MG850240","MG850241","MG850242","MG850243","MG850244","MG850245","MG850246","MG850247","MG850248","MG850249","MG850250","MG850251","MG850252","MG850253","MG850254","MG850255","MG850256","MG850257","MG850258","MG850259","MG850260","MG850261","MG850262","MG850263","MG850264","MG850265","MG850266","MG850267","MG850268","MG850269","MG850270","MG850271","MG850272","MG850273","MG850274","MG850275","MG850276","MG850277","MG850278","MG850279","MG850280","MG850281","MG850282","MG850283","MG850284","MG850285","MG850286","MG850287","MG850288","MG850289"]
-		# TODO: Need to make recSeqsList variable and automatically returned 
-
-		# Accept a list of pathlib Paths for the phylogenetic trees
 
 		self.trees_dir = self.outdir/"Phylogenetic_Trees"
 		trees = os.listdir(self.trees_dir)
@@ -353,13 +355,6 @@ class Results_page(QMainWindow):
 			m = re.match(self.gene_name_regex, t.name)
 			gene = m.group(1)
 			self.trees[gene] = Tree(str(t))
-		
-		# HardCoded stuff for the testing
-		self.recombinationStatus = {
-		"MG850175.1":{"Genes":1,"SNP":1},
-		"MG850176.1":{"Genes":0,"SNP":1}
-		} # This is for the LEDs
-		# /HardCoded stuff for the testing
 		
 		self.geneIDcolor_dict = {
 		"A":"#00ff00",
@@ -375,71 +370,134 @@ class Results_page(QMainWindow):
 		"Lin_BCD":"#ebeb34",
 		"Other":"#ffffff"
 		}
-		
 
+		# TODO: Filt_mock is the filtered query_file name, should make this variable
+		self.dfBlast = pd.read_excel(self.outdir / "Filt_mock_GeneID_Blastn_res_GeneID.xlsx", engine="openpyxl")
+		self.dfSNP = pd.read_excel(self.outdir / "SNPs_results.xlsx", engine="openpyxl")
+		self.dfCancerSNP = pd.read_excel(self.outdir / "Filt_mock_cProbe_Blastn_res_cSNP_nucl.xlsx", engine="openpyxl")
+		self.recgID_for_graphdf = pd.read_excel(self.outdir / "RecOnlyGeneID_to_usedf.xlsx", engine="openpyxl", index_col=0)
+		self.recSNP_for_graphdf = pd.read_excel(self.outdir / "RecOnlySNP_to_usedf.xlsx", engine="openpyxl", index_col=0)
+		self.recSeqsList = ["A2_refgenome","MG850175.1"] #TODO: Make this variable
+		
+		self.seqList = mainW.analyzedSeqs
+		self.totalSequenceRecDict = SeqIO.index(str(self.fasta_f),"fasta")
+		self.binaries = wrapper._init_binaries(self.system)
+		
+		self.muscle_bin= self.binaries[2]
+		self.simplotDBFasta = mainW.paramsdf.loc["SimplotRef_database","Value"]
+		
 		# Add tabs
 		self.tabs = QTabWidget()
-		self.tabs.addTab(self.BlastResTab(),"BLAST results")
-		self.tabs.addTab(self.SnpResTab(),"SNP results")
-		self.tabs.addTab(self.TreesResTab(),"Phylogenetic trees")
-		self.tabs.addTab(self.RecSeqsTab(),"Recombinant sequences")
+		self.tabList = []
+		self.tabs.addTab(self.AnalyzedSeqsTab(),"Analyzed sequences")
+		self.tabs.addTab(self.RecSeqsTab(),"Potential recombinant sequences")
 		
+		# Add the tabs to a list so i can easily call the selected sequence
+		# of each one
+		self.tabList.append(self.SeqsTab)
+		self.tabList.append(self.RecTab)
+		self.tabIdx = self.tabs.currentIndex()
+		self.tabs.currentChanged.connect(self.changeTabIdx)
+
 		self.centralWidget.mainLayout.addWidget(self.tabs, 0, 0)
 		self.centralWidget.setLayout(self.centralWidget.mainLayout)
 		self.setCentralWidget(self.centralWidget)
 
-	def BlastResTab(self):
-		# BLAST results table tab
-		self.BlastResDataFile = self.outdir / "Filt_mock_GeneID_Blastn_res_GeneID.xlsx"
-		self.geneIdFile = self.outdir / "Graphics/GeneSim/All_sequences.html"
+	# TODO: I think much of the tabs code is redundant
+	# Maybe i can find a way to generalise it? with the tabIdx function
+	
+	def AnalyzedSeqsTab(self):
+		self.SeqsTab = QWidget()
+		self.SeqsTab.mainLayout = QGridLayout()
+
+		# Create the scrollable list and a search field
+		self.SeqsTab.seqListWidget = QWidget()
+		self.SeqsTab.seqListWidget.mainLayout = QVBoxLayout()
+
+		self.SeqsTab.listWidget = QListWidget()
+		self.SeqsTab.listWidget.resize(100,100)
+		self.SeqsTab.listWidget.addItems(self.seqList)
+	
+		self.SeqsTab.listWidget.firstItem = self.SeqsTab.listWidget.item(0)
+		self.SeqsTab.listWidget.setCurrentItem(self.SeqsTab.listWidget.firstItem)
+		self.SeqsTab.selectedSeq = self.SeqsTab.listWidget.currentItem().text()
+
+		# The search field
+		self.SeqsTab.listSearchField = QLineEdit()
+		self.SeqsTab.listSearchField.setStyleSheet("font-size: 11")
+		self.SeqsTab.listSearchField.textChanged.connect(self.filterList)
 		
-		self.BlastTab = QWidget()
-		self.BlastTabLayout = QVBoxLayout()
-		self.BlastResTable = QTableWidget()
-		self.displayBlastResData(str(self.BlastResDataFile))
-		self.geneIdPlot = QWebEngineView()
-		self.geneIdPlotUrl = QUrl.fromLocalFile(str(self.geneIdFile)) # Needs complete path as string
-		self.geneIdPlot.load(self.geneIdPlotUrl)
-		self.BlastTabLayout.addWidget(self.BlastResTable)
-		self.BlastTabLayout.addWidget(self.geneIdPlot)
-		self.BlastTab.setLayout(self.BlastTabLayout)
-		return self.BlastTab
-	
-	def SnpResTab(self):
-		self.SnpResDataFile = self.outdir / "Filt_mock_Probe_Blastn_res_SNP_nucl.xlsx"
-		self.SnpPlotPath = self.outdir / "Graphics/SNP_detection/All_sequences.html"
-		# SNP results tab
-		self.SnpTab = QWidget()
-		self.SnpTabLayout = QVBoxLayout()
+		# Update the view when double clicking the list items
+		self.SeqsTab.listWidget.itemDoubleClicked.connect(self.changeTabSelectedSeq)
+		self.SeqsTab.listWidget.itemDoubleClicked.connect(self.displaySeqBlastResData)
+		self.SeqsTab.listWidget.itemDoubleClicked.connect(self.displayGeneIDGraph)
+		self.SeqsTab.listWidget.itemDoubleClicked.connect(self.displaySeqSNPResData)
+		self.SeqsTab.listWidget.itemDoubleClicked.connect(self.displaySeqCancerSNPResData)
+		self.SeqsTab.listWidget.itemDoubleClicked.connect(self.displaySNPGraph)
+		
+		self.SeqsTab.seqListWidget.mainLayout.addWidget(self.SeqsTab.listSearchField)
+		self.SeqsTab.seqListWidget.mainLayout.addWidget(self.SeqsTab.listWidget)
+		self.SeqsTab.seqListWidget.setLayout(self.SeqsTab.seqListWidget.mainLayout)
+		
+		# Blast results (Gene identification)
+		self.SeqsTab.blastResWidget = QWidget()
+		self.SeqsTab.blastResWidgetLayout = QGridLayout()
+		self.SeqsTab.blastResLabel = QLabel("BLAST results")
 
-		self.SnpResTable = QTableWidget()
-		self.displaySNPResData(str(self.SnpResDataFile))
-		self.SnpPlot = QWebEngineView()
-		self.SnpPlotUrl = QUrl.fromLocalFile(str(self.SnpPlotPath)) # Needs complete path as string
-		self.SnpPlot.load(self.SnpPlotUrl)
-		self.SnpTabLayout.addWidget(self.SnpResTable)
-		self.SnpTabLayout.addWidget(self.SnpPlot)
-		self.SnpTab.setLayout(self.SnpTabLayout)
-		return self.SnpTab
-	
-	def TreesResTab(self):
-		# Trees results tab
-		self.TreeTab = QWidget()
-		self.TreeTabLayout = QVBoxLayout()
+		# Blast results table widget
+		self.SeqsTab.blastResTable = QTableWidget()
 
-		self.TreesScrollArea = QScrollArea(widgetResizable=True)
-		self.TreesScrollArea.setStyleSheet(
+		self.SeqsTab.blastResWidgetLayout.addWidget(self.SeqsTab.blastResLabel,0,0,1,1)
+		self.SeqsTab.blastResWidgetLayout.addWidget(self.SeqsTab.blastResTable,1,0,2,2)
+		self.SeqsTab.blastResWidget.setLayout(self.SeqsTab.blastResWidgetLayout)
+
+		# SNP results
+		self.SeqsTab.snpResWidget = QWidget()
+		self.SeqsTab.snpResWidgetLayout = QGridLayout()
+		self.SeqsTab.snpResLabel = QLabel("Lineage specific SNPs")
+		
+		# Add SNP results table widget
+		self.SeqsTab.SnpResTable = QTableWidget()		
+		self.SeqsTab.snpResWidgetLayout.addWidget(self.SeqsTab.snpResLabel,0,0,1,1)
+		self.SeqsTab.snpResWidgetLayout.addWidget(self.SeqsTab.SnpResTable,1,0,2,2)
+		self.SeqsTab.snpResWidget.setLayout(self.SeqsTab.snpResWidgetLayout)
+
+		# Cancer SNP results
+		self.SeqsTab.cancersnpResWidget = QWidget()
+		self.SeqsTab.cancersnpResWidgetLayout = QGridLayout()
+		self.SeqsTab.cancersnpResLabel = QLabel("Lineage specific SNPs")
+		
+		# Add cancer SNP results table widget
+		self.SeqsTab.cancerSnpResTable = QTableWidget()		
+		self.SeqsTab.cancersnpResWidgetLayout.addWidget(self.SeqsTab.cancersnpResLabel,0,0,1,1)
+		self.SeqsTab.cancersnpResWidgetLayout.addWidget(self.SeqsTab.cancerSnpResTable,1,0,2,2)
+		self.SeqsTab.cancersnpResWidget.setLayout(self.SeqsTab.cancersnpResWidgetLayout)
+
+		# Gene results plotly graph
+		self.SeqsTab.geneIDBrowser = QWebEngineView()
+		# SNP results plotly graph
+		self.SeqsTab.snpBrowser = QWebEngineView()
+		
+		# cancer SNP results table widget
+		self.SeqsTab.cancerSnpResTable = QTableWidget()
+
+		# Trees with highlighted sequence in QScrollArea 
+		self.SeqsTab.SeqsTreesWidget = QWidget()
+		self.SeqsTab.SeqsTreesWidgetLayout = QVBoxLayout()
+		self.SeqsTab.SeqsTreesScollArea = QScrollArea(widgetResizable=True)
+		self.SeqsTab.SeqsTreesScollArea.setStyleSheet(
 			"""
 			QWidget{ background-color: white } 
 			QScrollBar{ background-color: none } 
 			"""
 		)
-		self.TreesImgContentWidget = QWidget()
-		self.TreesScrollArea.setWidget(self.TreesImgContentWidget)
-		self.TreesScrollArea.layout = QVBoxLayout(self.TreesImgContentWidget)
-		
+		self.SeqsTab.RecTreesImgContentWidget = QWidget()
+		self.SeqsTab.SeqsTreesScollArea.setWidget(self.SeqsTab.RecTreesImgContentWidget)
+		self.SeqsTab.SeqsTreesScollArea.layout = QVBoxLayout(self.SeqsTab.RecTreesImgContentWidget)
+
 		# Sort images correctly
 		highlight_dir = self.outdir / pathlib.Path("Graphics/Trees_images")
+	
 		self.tree_files = os.listdir(highlight_dir)
 		self.tree_files = [pathlib.Path(f) for f in self.tree_files]
 		self.tree_files_d = {}
@@ -452,87 +510,130 @@ class Results_page(QMainWindow):
 			pixmap = QPixmap(os.path.join(highlight_dir, file))
 			if not pixmap.isNull():
 				label = QLabel(pixmap=pixmap)
-				self.TreesScrollArea.layout.addWidget(label)
+				self.SeqsTab.SeqsTreesScollArea.layout.addWidget(label)
 		
-		self.InteractiveTrees = QWidget()
-		self.TreesHbox = QHBoxLayout()
-		self.InteractiveTreesLabel = QLabel("Explore trees interactively")
-		self.TreesHbox.addWidget(self.InteractiveTreesLabel)
-		self.TreesRenderButtonGroup = QButtonGroup()
-		self.TreesRenderButtonGroup.buttonClicked[int].connect(self.eteInteractive)
+		self.SeqsTab.RecInteractiveTrees = QWidget()
+		self.SeqsTab.RecTreesHbox = QHBoxLayout()
+		self.SeqsTab.RecInteractiveTreesLabel = QLabel("Explore trees interactively")
+		self.SeqsTab.RecTreesHbox.addWidget(self.SeqsTab.RecInteractiveTreesLabel)
+		self.SeqsTab.RecTreesRenderButtonGroup = QButtonGroup()
+		self.SeqsTab.RecTreesRenderButtonGroup.buttonClicked[int].connect(self.eteInteractive)
 		
 		# Gene buttons
 		for gene in self.genes:
-			self.button = QPushButton(gene)
-			self.TreesRenderButtonGroup.addButton(self.button)
-			self.TreesHbox.addWidget(self.button)
-		self.InteractiveTrees.setLayout(self.TreesHbox)
+			self.SeqsTab.button = QPushButton(gene)
+			self.SeqsTab.RecTreesRenderButtonGroup.addButton(self.SeqsTab.button)
+			self.SeqsTab.RecTreesHbox.addWidget(self.SeqsTab.button)
+		self.SeqsTab.RecInteractiveTrees.setLayout(self.SeqsTab.RecTreesHbox)
 		
-		self.TreeTabLayout.addWidget(self.TreesScrollArea)
-		self.TreeTabLayout.addWidget(self.InteractiveTrees)
-		self.TreeTab.setLayout(self.TreeTabLayout)
+		self.SeqsTab.SeqsTreesWidgetLayout.addWidget(self.SeqsTab.SeqsTreesScollArea)
+		self.SeqsTab.SeqsTreesWidgetLayout.addWidget(self.SeqsTab.RecInteractiveTrees)
+		self.SeqsTab.SeqsTreesWidget.setLayout(self.SeqsTab.SeqsTreesWidgetLayout)
 
-		return self.TreeTab
+		# QGridLayout.addItem(item, row, column[, rowSpan=1[, columnSpan=1[, alignment=Qt.Alignment()]]])
+		self.SeqsTab.mainLayout.addWidget(self.SeqsTab.seqListWidget,0,0) # span 2,1
+		self.SeqsTab.mainLayout.addWidget(self.SeqsTab.blastResWidget,0,1) # span 2,2
+		self.SeqsTab.mainLayout.addWidget(self.SeqsTab.cancerSnpResTable,1,0)
+
+		self.SeqsTab.mainLayout.addWidget(self.SeqsTab.geneIDBrowser,2,1)
+		
+
+		self.SeqsTab.mainLayout.addWidget(self.SeqsTab.snpResWidget,3,1,1,-1)
+		self.SeqsTab.mainLayout.addWidget(self.SeqsTab.snpBrowser,5,1,1,-1)
+
+		self.SeqsTab.mainLayout.addWidget(self.SeqsTab.SeqsTreesWidget,3,0,3,1) # span 3, 1
+
+		self.SeqsTab.setLayout(self.SeqsTab.mainLayout)
+		
+		return self.SeqsTab
 
 	def RecSeqsTab(self):
 		
 		self.RecTab = QWidget()
 		self.RecTab.mainLayout = QGridLayout()
-		# Create the scrollable list view
-		self.RecTab.listview = QListWidget()
-		self.RecTab.listview.resize(100,100)
-		self.RecTab.listview.addItems(self.recSeqsList)
-		# Add action in double click signal
-		self.RecTab.listview.itemDoubleClicked.connect(self.displaySeqBlastResData)
-		self.RecTab.listview.itemDoubleClicked.connect(self.displayGeneIDGraph)
-		self.RecTab.listview.itemDoubleClicked.connect(self.displaySeqSNPResData)
-		self.RecTab.listview.itemDoubleClicked.connect(self.displaySNPGraph)
-		self.RecTab.listview.itemDoubleClicked.connect(self.updateRecLED)
-		
 
+		# Create the scrollable list and a search field
+		self.RecTab.seqListWidget = QWidget()
+		self.RecTab.seqListWidget.mainLayout = QVBoxLayout()
 
-		self.RecTabLayout = QHBoxLayout()
+		self.RecTab.listWidget = QListWidget()
+		self.RecTab.listWidget.resize(100,100)
+		self.RecTab.listWidget.addItems(self.recSeqsList)
+	
+		self.RecTab.listWidget.firstItem = self.RecTab.listWidget.item(0)
+		self.RecTab.listWidget.setCurrentItem(self.RecTab.listWidget.firstItem)
+		self.RecTab.selectedSeq = self.RecTab.listWidget.currentItem().text()
+
+		# The search field
+		self.RecTab.listSearchField = QLineEdit()
+		self.RecTab.listSearchField.setStyleSheet("font-size: 11")
+		self.RecTab.listSearchField.textChanged.connect(self.filterList)
 		
-		# Create scroll area to add sequence names as buttons to show the different widgets
-		# Scroll area
-		# Set up the buttons
+		# Update the view when double clicking the list items
+		self.RecTab.listWidget.itemDoubleClicked.connect(self.changeTabSelectedSeq)
+		self.RecTab.listWidget.itemDoubleClicked.connect(self.displaySeqBlastResData)
+		self.RecTab.listWidget.itemDoubleClicked.connect(self.displayGeneIDGraph)
+		self.RecTab.listWidget.itemDoubleClicked.connect(self.displaySeqSNPResData)
+		self.RecTab.listWidget.itemDoubleClicked.connect(self.displaySeqCancerSNPResData)
+		self.RecTab.listWidget.itemDoubleClicked.connect(self.displaySNPGraph)
+		# self.RecTab.listWidget.itemDoubleClicked.connect(self.updateRecLED)
+		# TODO: Uncomment after testing
+		# Need to implement recombination status
 		
-		# Label of each box
-		self.RecTab.blastResLabelBox = QWidget()
-		self.RecTab.blastResLabelBoxLayout = QHBoxLayout()
+		self.RecTab.seqListWidget.mainLayout.addWidget(self.RecTab.listSearchField)
+		self.RecTab.seqListWidget.mainLayout.addWidget(self.RecTab.listWidget)
+		self.RecTab.seqListWidget.setLayout(self.RecTab.seqListWidget.mainLayout)
+		
+		# Blast results (Gene identification)
+		self.RecTab.blastResWidget = QWidget()
+		self.RecTab.blastResWidgetLayout = QGridLayout()
 		self.RecTab.blastResLabel = QLabel("BLAST results")
+
 		# Led widget for Recombination results
 		self.RecTab._blastLED=QLed(self, onColour=QLed.Green,offColour=QLed.Red, shape=QLed.Circle)
 		self.RecTab._blastLED.setFixedSize(18,18)
-		self.RecTab.blastResLabelBoxLayout.addWidget(self.RecTab.blastResLabel)
-		self.RecTab.blastResLabelBoxLayout.addWidget(self.RecTab._blastLED)
-		self.RecTab.blastResLabelBox.setLayout(self.RecTab.blastResLabelBoxLayout)
-		# TODO: Check stylsheet method
+		
+		# Blast results table widget
+		self.RecTab.blastResTable = QTableWidget()
+		self.RecTab.blastResWidgetLayout.addWidget(self.RecTab.blastResLabel,0,0,1,1)
+		self.RecTab.blastResWidgetLayout.addWidget(self.RecTab._blastLED,0,1,1,1)
+		self.RecTab.blastResWidgetLayout.addWidget(self.RecTab.blastResTable,1,0,2,2)
+		self.RecTab.blastResWidget.setLayout(self.RecTab.blastResWidgetLayout)
 
-		self.RecTab.snpResLabelBox = QWidget()
-		self.RecTab.snpResLabelBoxLayout = QHBoxLayout()
-		self.RecTab.snpResLabel = QLabel("SNP results")
+		# SNP results
+		self.RecTab.snpResWidget = QWidget()
+		self.RecTab.snpResWidgetLayout = QGridLayout()
+		self.RecTab.snpResLabel = QLabel("Lineage specific SNPs")
 		# Led widget for Recombination results
 		self.RecTab._snpLED=QLed(self, onColour=QLed.Green,offColour=QLed.Red, shape=QLed.Circle)
 		self.RecTab._snpLED.setFixedSize(18,18)
-		
-		self.RecTab.snpResLabelBoxLayout.addWidget(self.RecTab.snpResLabel)
-		self.RecTab.snpResLabelBoxLayout.addWidget(self.RecTab._snpLED)
-		self.RecTab.snpResLabelBox.setLayout(self.RecTab.snpResLabelBoxLayout)
-		# TODO: Check stylsheet method
 
-		# Add Blast results table widget
-		self.RecTab.blastResTable = QTableWidget()
+		# Add SNP results table widget
+		self.RecTab.SnpResTable = QTableWidget()		
+		self.RecTab.snpResWidgetLayout.addWidget(self.RecTab.snpResLabel,0,0,1,1)
+		self.RecTab.snpResWidgetLayout.addWidget(self.RecTab._snpLED,0,1,1,1)
+		self.RecTab.snpResWidgetLayout.addWidget(self.RecTab.SnpResTable,1,0,2,2)
+		self.RecTab.snpResWidget.setLayout(self.RecTab.snpResWidgetLayout)
+	
+		# Cancer SNP results
+		self.RecTab.cancersnpResWidget = QWidget()
+		self.RecTab.cancersnpResWidgetLayout = QGridLayout()
+		self.RecTab.cancersnpResLabel = QLabel("Lineage specific SNPs")
+		
+		# Add cancer SNP results table widget
+		self.RecTab.cancerSnpResTable = QTableWidget()		
+		self.RecTab.cancersnpResWidgetLayout.addWidget(self.RecTab.cancersnpResLabel,0,0,1,1)
+		self.RecTab.cancersnpResWidgetLayout.addWidget(self.RecTab.cancerSnpResTable,1,0,2,2)
+		self.RecTab.cancersnpResWidget.setLayout(self.RecTab.cancersnpResWidgetLayout)
+
 		# Gene results plotly graph
 		self.RecTab.geneIDBrowser = QWebEngineView()
-		# Add SNP results table widget
-		self.RecTab.SnpResTable = QTableWidget()
 		# SNP results plotly graph
 		self.RecTab.snpBrowser = QWebEngineView()
 
+
 		# Widget with Simplot Button
 		self.RecTab.simplotButtonAreaWidget = QWidget()
-		# self.simplotButtonAreaWidget.setFixedSize(150,150)
 		self.RecTab.simplotButtonAreaWidget.setMaximumSize(250,200)
 		self.RecTab.simplotButtonAreaWidgetSimplotLabel = QLabel("Similarity plot parameters")
 		self.RecTab.simplotButtonAreaWidgetWindowLabel = QLabel("Window size")
@@ -550,7 +651,6 @@ class Results_page(QMainWindow):
 		self.RecTab.simplotButtonAreaWidget.setLayout(self.RecTab.simplotButtonAreaWidgetLayout)
 
 		self.RecTab.simplotButton.clicked.connect(self.createSimplot)
-		#TODO: Implement createSimplot
 
 		# Trees with highlighted sequence in QScrollArea 
 		self.RecTab.RecSeqsTreesWidget = QWidget()
@@ -567,9 +667,8 @@ class Results_page(QMainWindow):
 		self.RecTab.RecSeqsTreesScollArea.layout = QVBoxLayout(self.RecTab.RecTreesImgContentWidget)
 
 		# Sort images correctly
-		# highlight_dir = self.outdir / pathlib.Path("Graphics\\Trees_images")
-		highlight_dir = pathlib.Path("mock_2021_08_24/Graphics/Trees_images")
-		# TODO: Make this variable
+		highlight_dir = self.outdir / pathlib.Path("Graphics/Trees_images")
+	
 		self.tree_files = os.listdir(highlight_dir)
 		self.tree_files = [pathlib.Path(f) for f in self.tree_files]
 		self.tree_files_d = {}
@@ -602,58 +701,34 @@ class Results_page(QMainWindow):
 		self.RecTab.RecSeqsTreesWidgetLayout.addWidget(self.RecTab.RecInteractiveTrees)
 		self.RecTab.RecSeqsTreesWidget.setLayout(self.RecTab.RecSeqsTreesWidgetLayout)
 
-		self.RecTab.mainLayout.addWidget(self.RecTab.listview,1,0) # Row, column
-		self.RecTab.mainLayout.addWidget(self.RecTab.simplotButtonAreaWidget,2,0) # Row, column
-		self.RecTab.mainLayout.addWidget(self.RecTab.RecSeqsTreesWidget,3,0,3,1)
-		self.RecTab.mainLayout.addWidget(self.RecTab.blastResLabelBox,0,1)
-		self.RecTab.mainLayout.addWidget(self.RecTab.blastResTable,1,1)
+		# QGridLayout.addItem(item, row, column[, rowSpan=1[, columnSpan=1[, alignment=Qt.Alignment()]]])
+		self.RecTab.mainLayout.addWidget(self.RecTab.seqListWidget,0,0) # span 2,1
+		self.RecTab.mainLayout.addWidget(self.RecTab.blastResWidget,0,1) # span 2,2
+		self.RecTab.mainLayout.addWidget(self.RecTab.simplotButtonAreaWidget,0,2) # span 2,1
+		self.RecTab.mainLayout.addWidget(self.RecTab.cancerSnpResTable,1,0)
+
 		self.RecTab.mainLayout.addWidget(self.RecTab.geneIDBrowser,2,1)
-		self.RecTab.mainLayout.addWidget(self.RecTab.snpResLabelBox,3,1)
-		self.RecTab.mainLayout.addWidget(self.RecTab.SnpResTable,4,1)
-		self.RecTab.mainLayout.addWidget(self.RecTab.snpBrowser,5,1)
-		
+
+		self.RecTab.mainLayout.addWidget(self.RecTab.snpResWidget,3,1,1,-1)
+		self.RecTab.mainLayout.addWidget(self.RecTab.snpBrowser,5,1,1,-1)
+
+		self.RecTab.mainLayout.addWidget(self.RecTab.RecSeqsTreesWidget,3,0,3,1) # span 3, 1
+
 		self.RecTab.setLayout(self.RecTab.mainLayout)
-
+		
 		return self.RecTab
-		
-	def displayBlastResData(self, excel_path):
-		df = pd.read_excel(excel_path,engine="openpyxl")
-		if df.size == 0:
-			return
-			
-		df.fillna('', inplace=True)
-		self.BlastResTable.setRowCount(df.shape[0])
-		self.BlastResTable.setColumnCount(df.shape[1])
-		self.BlastResTable.setHorizontalHeaderLabels(df.columns)
-		
-		# returns pandas array object
-		for row in df.iterrows():
-			values = row[1]
-			for col_index, value in enumerate(values):
-				tableItem = QTableWidgetItem(str(value))
-				self.BlastResTable.setItem(row[0], col_index, tableItem)
-		
-		self.BlastResTable.setColumnWidth(2, 300)
+	
+	def changeTabIdx(self):
+		self.tabIdx = self.tabs.currentIndex()
+	
+	def filterList(self, text):
+		for i in range(self.RecTab.listWidget.count()):
+			item = self.RecTab.listWidget.item(i)
+			item.setHidden(text not in item.text())
 
-	def displaySNPResData(self, excel_path):
-		df = pd.read_excel(excel_path,engine="openpyxl")
-		if df.size == 0:
-			return
-			
-		df.fillna('', inplace=True)
-		self.SnpResTable.setRowCount(df.shape[0])
-		self.SnpResTable.setColumnCount(df.shape[1])
-		self.SnpResTable.setHorizontalHeaderLabels(df.columns)
+	def changeTabSelectedSeq(self):
+		self.tabList[self.tabIdx].selectedSeq = self.tabList[self.tabIdx].listWidget.currentItem().text()
 		
-		# returns pandas array object
-		for row in df.iterrows():
-			values = row[1]
-			for col_index, value in enumerate(values):
-				tableItem = QTableWidgetItem(str(value))
-				self.SnpResTable.setItem(row[0], col_index, tableItem)
-		
-		self.SnpResTable.setColumnWidth(2, 300)
-
 	def eteInteractive(self, id):
 		"""
 		Open tree interactive window with the press of a button
@@ -671,16 +746,16 @@ class Results_page(QMainWindow):
 				t.ladderize(direction=1)
 				return t.show(tree_style=ts)
 
-	def displaySeqBlastResData(self, excel_path):
-		self.RecTab.recseq = self.RecTab.listview.currentItem().text()
-		self.RecTab.blastResTable.clear()
+	def displaySeqBlastResData(self):
+		self.tabList[self.tabIdx].blastResTable.clear()
 		if self.dfBlast.size == 0:
 			return
 		self.dfBlast.fillna('', inplace=True)
-		tmpdf = self.dfBlast[self.dfBlast["qaccver"] == self.RecTab.recseq]
-		self.RecTab.blastResTable.setRowCount(tmpdf.shape[0])
-		self.RecTab.blastResTable.setColumnCount(tmpdf.shape[1])
-		self.RecTab.blastResTable.setHorizontalHeaderLabels(tmpdf.columns)
+		tmpdf = self.dfBlast[self.dfBlast["qaccver"] == self.tabList[self.tabIdx].selectedSeq]
+		
+		self.tabList[self.tabIdx].blastResTable.setRowCount(tmpdf.shape[0])
+		self.tabList[self.tabIdx].blastResTable.setColumnCount(tmpdf.shape[1])
+		self.tabList[self.tabIdx].blastResTable.setHorizontalHeaderLabels(tmpdf.columns)
 		
 		# returns pandas array object
 		row_num = 0
@@ -688,33 +763,31 @@ class Results_page(QMainWindow):
 			values = row[1]
 			for col_index, value in enumerate(values):
 				tableItem = QTableWidgetItem(str(value))
-				self.RecTab.blastResTable.setItem(row_num, col_index, tableItem)
+				self.tabList[self.tabIdx].blastResTable.setItem(row_num, col_index, tableItem)
 			row_num += 1
-		
-		self.RecTab.blastResTable.setColumnWidth(2, 300)
+		self.tabList[self.tabIdx].blastResTable.resizeColumnsToContents()
 
 	def displayGeneIDGraph(self):
-		self.RecTab.geneIDBrowser = QWebEngineView()
-		tmpdf = self.recgID_for_graphdf[self.recgID_for_graphdf["Sequences"] == self.RecTab.recseq]
+		self.tabList[self.tabIdx].geneIDBrowser = QWebEngineView()
+		tmpdf = self.recgID_for_graphdf[self.recgID_for_graphdf["Sequences"] == self.tabList[self.tabIdx].selectedSeq]
 		tmpdf = tmpdf.sort_values("qstart")
 		fig = px.scatter(tmpdf, x="Gene", y="Sequences", size="pident", color="Lineage",text="Database",
 		hover_data=["Database","qstart","qend","pident"], title="Gene identification recombinant sequences", 
 		color_discrete_map = self.geneIDcolor_dict
 		)
-		self.RecTab.geneIDBrowser.setHtml(fig.to_html(include_plotlyjs='cdn'))
-		self.RecTab.geneIDBrowser.setFixedHeight(300)
-		self.RecTab.mainLayout.addWidget(self.RecTab.geneIDBrowser,2,1)
-		self.RecTab.setLayout(self.RecTab.mainLayout)
+		self.tabList[self.tabIdx].geneIDBrowser.setHtml(fig.to_html(include_plotlyjs='cdn'))
+		self.tabList[self.tabIdx].mainLayout.addWidget(self.tabList[self.tabIdx].geneIDBrowser,2,1)
+		self.tabList[self.tabIdx].setLayout(self.tabList[self.tabIdx].mainLayout)
 
-	def displaySeqSNPResData(self, excel_path):
-		self.RecTab.SnpResTable.clear()
+	def displaySeqSNPResData(self):
+		self.tabList[self.tabIdx].SnpResTable.clear()
 		if self.dfSNP.size == 0:
 			return
 		self.dfSNP.fillna('', inplace=True)
-		tmpdf = self.dfSNP[self.dfSNP["Index"] == self.RecTab.recseq]
-		self.RecTab.SnpResTable.setRowCount(tmpdf.shape[0])
-		self.RecTab.SnpResTable.setColumnCount(tmpdf.shape[1])
-		self.RecTab.SnpResTable.setHorizontalHeaderLabels(tmpdf.columns)
+		tmpdf = self.dfSNP[self.dfSNP["Sequences"] == self.tabList[self.tabIdx].selectedSeq]
+		self.tabList[self.tabIdx].SnpResTable.setRowCount(tmpdf.shape[0])
+		self.tabList[self.tabIdx].SnpResTable.setColumnCount(tmpdf.shape[1])
+		self.tabList[self.tabIdx].SnpResTable.setHorizontalHeaderLabels(tmpdf.columns)
 		
 		# returns pandas array object
 		row_num = 0
@@ -722,48 +795,75 @@ class Results_page(QMainWindow):
 			values = row[1]
 			for col_index, value in enumerate(values):
 				tableItem = QTableWidgetItem(str(value))
-				self.RecTab.SnpResTable.setItem(row_num, col_index, tableItem)
+				self.tabList[self.tabIdx].SnpResTable.setItem(row_num, col_index, tableItem)
 			row_num += 1
 		
-		self.RecTab.SnpResTable.setColumnWidth(2, 300)
-		self.RecTab.SnpResTable.setFixedHeight(80)
+		self.tabList[self.tabIdx].SnpResTable.resizeColumnsToContents()
+		self.tabList[self.tabIdx].SnpResTable.setFixedHeight(80)
 
 	def displaySNPGraph(self):
-		self.RecTab.snpBrowser = QWebEngineView()
-		tmpdf = self.recSNP_for_graphdf[self.recSNP_for_graphdf["Sequences"] == self.RecTab.recseq]
+		self.tabList[self.tabIdx].snpBrowser = QWebEngineView()
+		tmpdf = self.recSNP_for_graphdf[self.recSNP_for_graphdf["Sequences"] == self.RecTab.selectedSeq]
 		fig = px.scatter(tmpdf, x="SNP reference pos", y="Sequences", color="Lineage",
 			hover_data=["SNP reference pos","Lineage","Nucleotide"], title="SNP identification recombinant sequences", 
 			color_discrete_map=self.snp_color_dict
 		)
 		fig.update_layout(xaxis_type = 'linear')
-		self.RecTab.snpBrowser.setHtml(fig.to_html(include_plotlyjs='cdn'))
-		self.RecTab.snpBrowser.setFixedHeight(400)
-		self.RecTab.mainLayout.addWidget(self.RecTab.snpBrowser,5,1)
-		self.RecTab.setLayout(self.RecTab.mainLayout)
+		self.tabList[self.tabIdx].snpBrowser.setHtml(fig.to_html(include_plotlyjs='cdn'))
+		self.tabList[self.tabIdx].mainLayout.addWidget(self.tabList[self.tabIdx].snpBrowser,5,1)
+		self.tabList[self.tabIdx].setLayout(self.tabList[self.tabIdx].mainLayout)
+
+	def displaySeqCancerSNPResData(self):
+		self.tabList[self.tabIdx].cancerSnpResTable.clear()
+		if self.dfCancerSNP.size == 0:
+			return
+		self.dfCancerSNP.fillna('', inplace=True)
+		tmpdf = self.dfCancerSNP[self.dfCancerSNP["Sequences"] == self.tabList[self.tabIdx].selectedSeq]
+		# tmpdf = tmpdf.T
+		self.tabList[self.tabIdx].cancerSnpResTable.setRowCount(tmpdf.shape[0])
+		self.tabList[self.tabIdx].cancerSnpResTable.setColumnCount(tmpdf.shape[1])
+		self.tabList[self.tabIdx].cancerSnpResTable.setHorizontalHeaderLabels(tmpdf.columns)
+		
+		# returns pandas array object
+		row_num = 0
+		for row in tmpdf.iterrows():
+			values = row[1]
+			for col_index, value in enumerate(values):
+				tableItem = QTableWidgetItem(str(value))
+				self.tabList[self.tabIdx].cancerSnpResTable.setItem(row_num, col_index, tableItem)
+			row_num += 1
+		self.tabList[self.tabIdx].cancerSnpResTable.resizeColumnsToContents()
+		self.tabList[self.tabIdx].cancerSnpResTable.setFixedHeight(80)
 
 	def updateRecLED(self):
-		self.RecTab._blastLED.setValue(self.recombinationStatus[self.RecTab.recseq]["Genes"])
-		self.RecTab._snpLED.setValue(self.recombinationStatus[self.RecTab.recseq]["SNP"])
+		"""
+		Self explanatory
+		This function applies only to the Putative recombinant sequences tab
+		"""
+		self.RecTab._blastLED.setValue(self.recombinationStatus[self.RecTab.selectedSeq]["Genes"])
+		self.RecTab._snpLED.setValue(self.recombinationStatus[self.RecTab.selectedSeq]["SNP"])
 
 	def createSimplot(self):
-		test = "A2_refgenome"
-		self.RecTab.recseq = test
-		print(self.RecSeqsTab.recseq)
-		print(self.outdir)
-		simplot.isolate_sequence()
-		print(self.RecTab.windowSizeSpinBox.value)
-		# self.simplotW = Simplot_page(self.RecTab.recseq, 300, 20, self.aln_f) # TODO: Need to make these variable
-		# print(self.simplotW)
-		# mainW.openWindows["Simplot"] = self.simplotW
-		# self.simplotW.show()
-		# print(mainW.openWindows)
+		"""
+		Self explanatory
+		This function applies only to the Putative recombinant sequences tab
+		"""
+		self.tmpOut = self.outdir / "tmp_dir"
+		self.aln_f = simplot.align(self.muscle_bin, self.simplotDBFasta, self.totalSequenceRecDict,
+		 self.RecTab.selectedSeq, self.tmpOut
+		)
+		self.window_size = self.RecTab.windowSizeSpinBox.value()
+		self.step = self.RecTab.stepSizeSpinBox.value()
+		self.simplotW = Simplot_page(self.RecTab.selectedSeq, self.window_size, 
+		self.step, self.aln_f
+		)
+		mainW.openWindows["Simplot"] = self.simplotW
+		mainW.openWindows["Simplot"].show()
 
-	# Closing the results and reloading them in the same application session
-	# throws the following errors and creates an infinite loop
-	# opengl direct render is enabled on my machine
-	# QQuickWidget: Failed to make context current
-	# QQuickWidget::resizeEvent() no OpenGL context
-
+	def closeEvent(self, event):
+		self.totalSequenceRecDict.close()
+		del mainW.openWindows["Results"]
+	
 class Simplot_page(QMainWindow):
 	def __init__(self, sequence, window_size, step, aln_f, parent=None):
 		super().__init__(parent)
@@ -771,10 +871,9 @@ class Simplot_page(QMainWindow):
 		self.resize(1000,1000)
 		self.setAutoFillBackground(True)
 		self.setStyleSheet("background: 'white'")
-		# Hard coded for testing
 		self.qseq = sequence
-		# self.aln_f = pathlib.Path("tmp/A2_refgenome_aln.fa")
 		self.aln_f = pathlib.Path(aln_f)
+
 		# Simplot creation parameters
 		self.wsize = window_size
 		self.step = step
@@ -782,11 +881,8 @@ class Simplot_page(QMainWindow):
 		# Create the pyqtgraph widget and embed it into the central Widget
 		# Next create the legend widget and follow the same steps
 		self.centralWidget = QWidget()
-
 		self.centralWidget.mainLayout = QGridLayout()
-
 		self.setCentralWidget(self.centralWidget)
-
 
 		# Similarity plot graph
 		self.simplotGraphWidget = pg.GraphicsLayoutWidget(parent=self)
@@ -803,10 +899,9 @@ class Simplot_page(QMainWindow):
 		self.viewbox.setMaximumWidth(200)
 		self.viewbox.setMinimumWidth(200)
 		self.viewbox.setBackgroundColor((191, 189, 189))
-		self.viewbox_label = pg.LabelItem("<span style=\"color:black;font-size:10pt\">Legend: </span>", parent=self.viewbox)
+		self.viewbox_label = pg.LabelItem("<span style=\"color:black;font-size:11pt\">Legend: </span>", parent=self.viewbox)
 
-
-		self.legend = pg.LegendItem(labelTextColor=(0,0,0),labelTextSize="10pt")
+		self.legend = pg.LegendItem(labelTextColor=(0,0,0),labelTextSize="11pt")
 		self.viewbox.addItem(self.legend)
 		self.legend.setParentItem(self.viewbox)
 		self.legend.anchor((0,0), (0,0), offset=(0,12))
@@ -815,10 +910,10 @@ class Simplot_page(QMainWindow):
 		self.simplotGraphWidget.setBackground("w")
 
 		# Initialize the different pen colors
-		self.pen_green = pg.mkPen(color=(40, 237, 43),  width=1)
-		self.pen_blue = pg.mkPen(color=(66, 170, 245),  width=1)
-		self.pen_orange = pg.mkPen(color=(237, 155, 40),  width=1)
-		self.pen_red = pg.mkPen(color=(255, 0, 0),  width=1)
+		self.pen_green = pg.mkPen(color=(40, 237, 43),  width=1.5)
+		self.pen_blue = pg.mkPen(color=(66, 170, 245),  width=1.5)
+		self.pen_orange = pg.mkPen(color=(237, 155, 40),  width=1.5)
+		self.pen_red = pg.mkPen(color=(255, 0, 0),  width=1.5)
 
 		# Plot the curves
 		self.xaxisData, self.yaxisData, self.alnSize, self.qseqSize = simplot.calculate_similarities(self.qseq, self.aln_f,self.step,self.wsize)
@@ -827,7 +922,7 @@ class Simplot_page(QMainWindow):
 		self.c3 = self.plot.plot(self.xaxisData, self.yaxisData["AF472509.1_C1"], name="Lineage C", pen=self.pen_orange)
 		self.c4 = self.plot.plot(self.xaxisData, self.yaxisData["HQ644257.1_D1"], name="Lineage D", pen=self.pen_red)
 
-		self.legend = pg.LegendItem(labelTextColor=(0,0,0),labelTextSize="10pt")
+		self.legend = pg.LegendItem(labelTextColor=(0,0,0),labelTextSize="11pt")
 		self.viewbox.addItem(self.legend)
 		self.legend.setParentItem(self.viewbox)
 		self.legend.anchor((0,0), (0,0), offset=(0,12))
@@ -836,12 +931,14 @@ class Simplot_page(QMainWindow):
 		self.legend.addItem(self.c3, name="Lineage C")
 		self.legend.addItem(self.c4, name="Lineage D")
 
-		# # Configure the mouse functions of the plot
+		# Configure the mouse functions of the plot
 		# self.c1.sigClicked.connect(self.plotClicked)
-		# # TODO: Figure out what i need to do
+		# TODO: Figure out what i need to do
+		# Can leave this for now on
+		# /Configure the mouse functions of the plot
+
 		# Modify plot
-		
-		self.title = ("<span style=\"color:black;font-size:10pt;background-color:#cffaf9\">Sequence: %s Sequence size: %s Alignment size: %s Window: %s Step: %s</span>"
+		self.title = ("<span style=\"color:black;font-size:11pt;background-color:#cffaf9\">Sequence: %s Sequence size: %s Alignment size: %s Window: %s Step: %s</span>"
 		%(self.qseq,self.qseqSize,self.alnSize,self.wsize,self.step)
 		)
 
@@ -878,11 +975,9 @@ class Simplot_page(QMainWindow):
 		else:
 			return
 
-	def closeEvent(self):
-		pass
-		# simplot.rm_tmpfile(self.aln_f)
-		# TODO: Uncomment after testing
-
+	def closeEvent(self,event):
+		event.accept()
+		simplot.rm_tmpfile(self.aln_f)
 
 if __name__ == "__main__":
 	app = QApplication(sys.argv)
@@ -893,3 +988,5 @@ if __name__ == "__main__":
 # TODO: Main Window should be able to be closed and not terminate the app?
 # TODO: Write in MD. Never remove the logfile. It is necessary for the applicationi
 # to continue the process
+# TODO: Each  time the tabs are changed the QWebEngines become smaller and smaller
+# TODO: Need to check in windows os

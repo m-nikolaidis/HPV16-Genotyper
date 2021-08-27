@@ -59,7 +59,9 @@ class Main_page(QMainWindow):
 	def __init__(self, parent=None):
 		super().__init__(parent)
 		self.setWindowTitle("HPV16 genotyping tool")
-		self.resize(400, 200)
+		self.resize(1000, 720)
+
+		
 		self.centralWidget = QLabel("Hello, World")
 		self.centralWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 		self.setCentralWidget(self.centralWidget)
@@ -69,8 +71,6 @@ class Main_page(QMainWindow):
 
 		self.finishedWidget = QLabel("Finished! \n Please don't delete the logfile")
 		self.finishedWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-		
-		self.table = QTableWidget()
 		
 		self._createActions()
 		self._createMenus()
@@ -87,6 +87,7 @@ class Main_page(QMainWindow):
 		# TODO: Possible error in windows from the initialization of the default parameters (forward slash)
 		self.paramsdf = pd.DataFrame.from_dict(params,orient='index')
 		self.paramsdf.rename(columns={0:"Value"},inplace=True)
+
 		self.show()
 		# To keep the pages that are opened as extra windows
 		self.openWindows = {}

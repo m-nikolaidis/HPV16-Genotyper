@@ -30,7 +30,7 @@ def blastn_search(exe_params,query_f_path, workflow,makeblastdb_bin,blastn_bin,e
 		logging.info("Starting - BLASTn search for gene identification")
 		db_path = pathlib.Path(exe_params.loc['GenesRef_database',"Value"])
 		db_file = db_path.name
-		blastres_f = query_f_path.stem + "_GeneID_Blastn_res.xml"
+		blastres_f = "GeneIdentification_Blastn_results.xml"
 		evalue = exe_params.loc['Gene_identification_Evalue',"Value"]
 		word_size = exe_params.loc['Gene_identification_Word_size',"Value"]
 	
@@ -38,7 +38,7 @@ def blastn_search(exe_params,query_f_path, workflow,makeblastdb_bin,blastn_bin,e
 		logging.info("Starting - BLASTn search for Lineage specific SNPs")
 		db_path = pathlib.Path(exe_params.loc['SNP_db_path',"Value"])
 		db_file = db_path.name
-		blastres_f = query_f_path.stem + "_Probe_Blastn_res.xml"
+		blastres_f = "lineageSpecificProbes_Blastn_results.xml"
 		evalue = exe_params.loc["SNP_identification_Evalue","Value"]
 		word_size = exe_params.loc["SNP_identification_Word_Size","Value"]
 
@@ -46,7 +46,7 @@ def blastn_search(exe_params,query_f_path, workflow,makeblastdb_bin,blastn_bin,e
 		logging.info("Starting - BLASTn search for increased cancer risk SNPs")
 		db_path = pathlib.Path(exe_params.loc['cSNP_db_path',"Value"])
 		db_file = db_path.name
-		blastres_f = query_f_path.stem + "_cProbe_Blastn_res.xml"
+		blastres_f = "cancerProbes_Blastn_results.xml"
 		evalue = exe_params.loc["SNP_identification_Evalue","Value"]
 		word_size = exe_params.loc["SNP_identification_Word_Size","Value"]
 	
@@ -83,7 +83,13 @@ def _sort_alphanumeric(iteratable):
 	return sorted(iteratable, key = sorting_key)
 
 
-def parse_GeneID_results(blastres_f_path, params, exe=True):
+def parse_GeneID_results(blastres_f_path: pathlib.Path, 
+		params: pd.DataFrame, 
+		exe:bool =True
+	) -> pathlib.Path:
+	"""
+	Writes excel file
+	"""
 	if not exe:
 		geneID_results_path = blastres_f_path.with_name(blastres_f_path.stem + "_GeneID.xlsx")
 		return geneID_results_path
@@ -97,6 +103,7 @@ def parse_GeneID_results(blastres_f_path, params, exe=True):
 			dblengths[name] = seqlen
 		return dblengths
 	logging.info("Parsing - gene identification results ")
+	
 	db_path = pathlib.Path(params.loc["GenesRef_database","Value"])
 	dblengths = _get_db_lengths(db_path)
 	blast_records= NCBIXML.parse(open(blastres_f_path))
@@ -150,11 +157,20 @@ def parse_GeneID_results(blastres_f_path, params, exe=True):
 		df_list.append(tmpdf)
 
 	blastdf = pd.concat(df_list)
-	geneID_results_path = blastres_f_path.with_name(blastres_f_path.stem + "_GeneID.xlsx")
+	blastdf.index = range(len(blastdf))
+	blastdf["Sequences"] = blastdf["qaccver"]
+	indeces = blastdf.index
+	for idx in indeces:
+		saccver = blastdf.loc[idx,"saccver"]
+		db, gene = saccver.split("_")
+		blastdf.loc[idx,"Database"] = db
+		blastdf.loc[idx,"Gene"] = gene
+		blastdf.loc[idx,"Lineage"] = db[0] 
+	geneID_results_path = blastres_f_path.parent / "GeneIdentification_results.xlsx"
 	blastdf.to_excel(geneID_results_path,index=False)
 	return geneID_results_path
-#TODO: Need to add more info in the cancer snps
-# Query position of SNP, ....
+
+
 def parse_SNP_results(blastres_f_path: pathlib.Path, 
 	exe:bool = True, cancer:bool = False
 	) -> pathlib.Path:
@@ -164,14 +180,13 @@ def parse_SNP_results(blastres_f_path: pathlib.Path,
 	cancer parameter is used to differentiate from Lineage specific SNPs and cancer SNPs
 	Return None
 	"""
+	
 	if cancer:
-		probe_results_path = blastres_f_path.with_name(blastres_f_path.stem + "_cSNP_nucl.xlsx")
+		probe_results_path = blastres_f_path.parent / "cancerSNP_results.xlsx"
 		logging.info("Parsing - increased cancer risk SNP results ")
-
 	else:
-		probe_results_path = blastres_f_path.with_name(blastres_f_path.stem + "_SNP_nucl.xlsx")
+		probe_results_path = blastres_f_path.parent / "LineageSpecificSNPs.xlsx"
 		logging.info("Parsing - lineage specific SNP results ")
-
 	if not exe:
 		return probe_results_path
 	
@@ -243,8 +258,6 @@ def parse_SNP_results(blastres_f_path: pathlib.Path,
 		probedf = pd.concat(tmpdict,axis=0)
 		probedf.index.names = ["Sequences", "SNP"]
 		probedf = probedf.reset_index()
-		print(F"This is the df {probedf}")
-		print(F"This is the path {probe_results_path}")
 		probedf.to_excel(probe_results_path,na_rep="X")
 	else:
 		for qorg in probe_table_res:
@@ -258,18 +271,18 @@ def parse_SNP_results(blastres_f_path: pathlib.Path,
 		probedf.to_excel(probe_results_path,na_rep="X")
 	return probe_results_path
 
-
-def find_recombinants(blastresdf, exe=True):
+def find_recombinants(blastdf, exe=True):
 	recombinants = []
-	orgs = np.unique(blastresdf["qaccver"])
-	indeces = blastresdf.index
-	blastresdf["Lineage"] = blastresdf["saccver"]
-	blastresdf["Lineage"] = blastresdf["Lineage"].apply(lambda x: x.split("_")[0][0])
+	orgs = np.unique(blastdf["qaccver"])
+	blastdf["Lineage"] = blastdf["saccver"]
+	blastdf["Lineage"] = blastdf["Lineage"].apply(lambda x: x.split("_")[0][0])
 	for org in orgs:
-		tmpl = np.unique(blastresdf[blastresdf["qaccver"] == org]["Lineage"].values)
+		tmpl = np.unique(blastdf[blastdf["qaccver"] == org]["Lineage"].values)
 		if len(tmpl) > 1:
 			# If more than one lineages exist it is recombinant
 			recombinants.append(org)
+	# TODO: Implement recombination status
+	# I have to use results from the lineageSnps too
 	return recombinants
 
 def filter_nonHPV16(blastres_f_path, params, exe=True, filter="HPV16"):

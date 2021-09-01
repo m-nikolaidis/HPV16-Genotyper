@@ -57,8 +57,6 @@ from ete3 import (
 	Tree, TreeStyle, TextFace, NodeStyle
 )
 
-#TODO: Use QErrorMessage for errors
-
 class Worker(QObject):
 	"""Use worker classes to give a multithreading behaviour to the application
 	So it does not freeze when a long task is executed
@@ -149,14 +147,12 @@ class MainWindow(QMainWindow):
 		if btnWidget.objectName() == "selectOutdirButton":
 			GuiFunctions.getOutdir(self)
 		if btnWidget.objectName() == "loadResultsButton":
-			GuiFunctions.getResdir(self)
-			GuiFunctions.initVariables(self)
+			GuiFunctions.loadResDir(self)
 		if btnWidget.objectName() == "runPipelineButton":
 			GuiFunctions.execPipeline(self)
-			
 		if btnWidget.objectName() == "openHelpButton":
 			pass
-			# GuiFunctions.showHelp
+			# GuiFunctions.showHelp(self)
 			# TODO: Implement
 	
 	def closeEvent(self, event):
@@ -165,11 +161,12 @@ class MainWindow(QMainWindow):
 		"Do you want to close this window?\nThe application will be terminated",
 		QMessageBox.Yes | QMessageBox.No
 		)
-
 		if reply == QMessageBox.Yes:
 			event.accept()
 			logging.shutdown()
 			# Also close all other windows
+			# and remove tmp directory
+			# TODO:
 		else:
 			event.ignore()
 
@@ -215,6 +212,7 @@ class GuiFunctions(MainWindow):
 
 	# TODO: Implement this
 	# def selectResultsMenu(self, widget):
+	# automatically select the results menu when created
 	# 	for w in self.ui.frame_left_menu.findChildren(QPushButton):
 	# 		if w.objectName() == widget:
 	# 			w.setStyleSheet(GuiFunctions.selectMenu(w.styleSheet()))
@@ -239,7 +237,6 @@ class GuiFunctions(MainWindow):
 		self.homeButtons = []
 		indeces = range(len(self.homeButtonsObj))
 		menuSpacer = QSpacerItem(20, 20)
-		# menuSpacer.setStyleSheet("background: white;")
 		for idx in indeces:
 			objName = self.homeButtonsObj[idx]
 			name = self.homeButtonNames[idx]
@@ -262,13 +259,6 @@ class GuiFunctions(MainWindow):
 			self.homeButtons.append(homeButton)
 	
 	def enablePipeline(self):
-		# Init the LayoutWidget
-
-		
-		# self.ui.homeMenuVerticalLayout.addWidget(homeButton)
-		# self.ui.homeMenuVerticalLayout.addWidget(self.ui.orLabel)
-		# self.ui.homeMenuVerticalLayout.addItem(menuSpacer)
-		# self.ui.homeMenuVerticalLayout.addWidget(homeButton)
 		# Delete all the existing widgets
 		for i in reversed(range(self.ui.homeMenuVerticalLayout.count())): 
 			if self.ui.homeMenuVerticalLayout.itemAt(i).widget() != None:
@@ -301,6 +291,8 @@ class GuiFunctions(MainWindow):
 			homeButton.setText(name)
 			homeButton.setToolTip(name)
 			homeButton.clicked.connect(self.Button)
+			if objName == "runPipelineButton":
+				homeButton.setStyleSheet(Style.style_bt_highlight.replace('ICON_REPLACE', "url(:/16x16/icons/16x16/cil-home.png)"))
 			if objName == "loadResultsButton":
 				self.ui.homeMenuVerticalLayout.addWidget(self.ui.orLabel)
 			if objName == "openHelpButton":
@@ -355,7 +347,7 @@ class GuiFunctions(MainWindow):
 			mainW.outdir = pathlib.Path(response)
 			mainW.paramsdf.loc["out"] = str(mainW.outdir)
 	
-	def getResdir(self):
+	def loadResDir(self):
 		response = QFileDialog.getExistingDirectory(
 			parent=self,
 			caption="Select the results directory",
@@ -365,7 +357,7 @@ class GuiFunctions(MainWindow):
 		else:
 			mainW.outdir = pathlib.Path(response)
 			mainW.paramsdf.loc["out"] = str(mainW.outdir)
-			logfile = mainW.outdir / pathlib.Path("logfile.log")
+			logfile = mainW.outdir / pathlib.Path(".logfile.log")
 			if not logfile.exists:
 				raise Exception("Cannot load results. LOGFILE has been deleted")
 				# TODO: Make this appear in the warning window
@@ -384,8 +376,8 @@ class GuiFunctions(MainWindow):
 			mainW.fasta_path = mainW.paramsdf.loc["query","Value"]
 			mainW.totalSequenceRecDict = SeqIO.index(str(mainW.fasta_path),"fasta")
 			mainW.analyzedSeqs = list(mainW.totalSequenceRecDict.keys())
-
 			GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-user-follow.png)", True)
+			GuiFunctions.initVariables(self)
 	
 	def execPipeline(self, exe=True):
 		"""
@@ -418,22 +410,21 @@ class GuiFunctions(MainWindow):
 	
 	def initVariables(self):
 		# self is mainW
-		# TODO: Filt_mock is the filtered query_file name, should make this variable
-		self.dfBlast = pd.read_excel(self.outdir / "Filt_mock_GeneID_Blastn_res_GeneID.xlsx", engine="openpyxl")
-		self.dfLineageSnp = pd.read_excel(self.outdir / "SNPs_results.xlsx", engine="openpyxl")
-		self.dfCancerSnp = pd.read_excel(self.outdir / "Filt_mock_cProbe_Blastn_res_cSNP_nucl.xlsx", engine="openpyxl")
-		self.recgID_for_graphdf = pd.read_excel(self.outdir / "RecOnlyGeneID_to_usedf.xlsx", engine="openpyxl", index_col=0)
-		self.lineageSNP_for_graphdf = pd.read_excel(self.outdir / "RecOnlySNP_to_usedf.xlsx", engine="openpyxl", index_col=0)
-		self.recSeqsList = ["A2_refgenome","MG850175.1"] #TODO: Make this variable
+		self.dfBlast = pd.read_excel(self.outdir / "GeneIdentification_results.xlsx", engine="openpyxl")
+		# TODO: Need to drop certain columns in the output
+
+		self.dfLineageSnp = pd.read_excel(self.outdir / "LineageSpecificSNPs.xlsx", engine="openpyxl", index_col=0)
+		self.dfCancerSnp = pd.read_excel(self.outdir / "cancerSNP_results.xlsx", engine="openpyxl")
+		self.recgID_for_graphdf = pd.read_excel(self.outdir / "GeneIdentification_results.xlsx", engine="openpyxl", index_col=0)
 		self.muscle_bin= self.binaries[2]
 		self.simplotDBFasta = self.paramsdf.loc["SimplotRef_database","Value"]
-		self.geneIDcolor_dict = {
+		self.geneIDColorDict = {
 		"A":"#00ff00",
 		"B":"#0080ff",
 		"C":"#ff8000",
 		"D":"#ff0000"
 		}
-		self.snp_color_dict = {
+		self.lineageSpecificSnpColorDict = {
 		"Lin_A":"#00ff00",
 		"Lin_B":"#0080ff",
 		"Lin_C":"#ff8000",
@@ -488,7 +479,7 @@ class GuiFunctions(MainWindow):
 		Self is listWidgetItem
 		"""
 		mainW.selectedSeq = self.text()
-		tables = [mainW.ui.blastResTable,mainW.ui.lineageSnpTable,mainW.ui.cancerSnpTable]
+		tables = [mainW.ui.blastResTable,mainW.ui.lineageSnpTable,mainW.ui.lineageSumsTable,mainW.ui.cancerSnpTable]
 		indeces = range(len(tables))
 		for idx in indeces:
 			table = tables[idx]
@@ -498,7 +489,13 @@ class GuiFunctions(MainWindow):
 				tmpdf = mainW.dfBlast[mainW.dfBlast["qaccver"] == mainW.selectedSeq]
 			if tableName == "lineageSnpTable":
 				if mainW.dfLineageSnp.size == 0: return
-				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp["Sequences"] == mainW.selectedSeq]
+				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq].tail(1)
+			if tableName == "lineageSumsTable":
+				tmpdf = tmpdf.T.tail(8) # This tmpdf should be the lineageSnpTable one
+				tmpdf["Lineage"] = tmpdf.index
+				tmpdf.index = range(len(tmpdf))
+				tmpdf.rename({tmpdf.columns[0]:"Proportion"}, inplace=True, axis=1)
+				tmpdf = tmpdf[["Lineage","Proportion"]]
 			if tableName == "cancerSnpTable":
 				if mainW.dfCancerSnp.size == 0: return
 				tmpdf = mainW.dfCancerSnp[mainW.dfCancerSnp["Sequences"] == mainW.selectedSeq]
@@ -521,7 +518,8 @@ class GuiFunctions(MainWindow):
 			table.horizontalHeader().setCascadingSectionResizes(True)
 			if tableName != "lineageSnpTable":
 				table.horizontalHeader().setDefaultSectionSize(int(1100 / tmpdf.shape[1]))
-	
+			if tableName == "lineageSumsTable":
+				table.horizontalHeader().setDefaultSectionSize(120)
 	def displayGraphs(self):
 		browsers = [mainW.ui.geneIDBrowser, mainW.ui.snpBrowser]
 		for browser in browsers:
@@ -531,18 +529,34 @@ class GuiFunctions(MainWindow):
 				tmpdf = tmpdf.sort_values("qstart")
 				fig = px.scatter(tmpdf, x="Gene", y="Sequences", size="pident", color="Lineage",text="Database",
 				hover_data=["Database","qstart","qend","pident"], 
-				color_discrete_map = mainW.geneIDcolor_dict
+				color_discrete_map = mainW.geneIDColorDict
 				)
+				fig.update_layout(height=200, legend_y=1.5)
 			if browserName == "lineageSnpBrowser":
-				tmpdf = mainW.lineageSNP_for_graphdf[mainW.lineageSNP_for_graphdf["Sequences"] == mainW.selectedSeq]
-				fig = px.scatter(tmpdf, x="SNP reference pos", y="Sequences", color="Lineage",
+				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq]
+				tmpdf = tmpdf.T
+				to_drop = ["Lin_A", "Lin_ABC", "Lin_ABD",
+				 "Lin_ACD", "Other", "Lin_BCD", "Lin_D",
+				 "Dominant lineage"
+				]
+				tmpdf.drop(index=to_drop,inplace=True,axis=0)
+				tmpdf.columns=["Nucleotide","Lineage"]
+				tmpdf["SNP reference pos"] = tmpdf.index
+				tmpdf["SNP reference pos"] = tmpdf["SNP reference pos"].apply(lambda x: int(x.split("_")[2]) )
+				tmpdf.index = range(len(tmpdf))
+				tmpdf["Sequence"] = mainW.selectedSeq
+				fig = px.scatter(tmpdf, x="SNP reference pos", y="Sequence", color="Lineage",
 				hover_data=["SNP reference pos","Lineage","Nucleotide"], 
-				color_discrete_map=mainW.snp_color_dict
+				color_discrete_map=mainW.lineageSpecificSnpColorDict
 				)
-				fig.update_layout(xaxis_type = 'linear')
+				fig.update_layout(xaxis_type = 'linear', height=200, legend_y=1.5)
 			browser.setHtml(fig.to_html(include_plotlyjs='cdn'))
-			# TODO: Displays info for recombinant sequences only. Should i fix it?
-			# The graphs are too small. Use another way to plot them?
+
+	# Clean tmp directory after quiting
+	# and recreate so i can use it for simplot
+	# also save the html graphics in the corresponding directory
+	# and remove if the user does not press save graphics
+	# TODO: Implement those above
 
 	def eteInteractive(self):
 		buttonId = mainW.ui.TreesRenderButtonGroup.button(self).text()
@@ -1125,7 +1139,7 @@ class Ui_MainWindow(QMainWindow):
 		self.lineageSnpLabel = QLabel(self.lineageSnpFrame)
 		self.lineageSnpLabel.setFont(font4)
 		self.lineageSnpLabel.setText("Lineage specific SNPs")
-		# 2. Table
+		# 2. Basic Table
 		self.lineageSnpTable = QTableWidget(self.lineageSnpFrame)
 		self.lineageSnpTable.setObjectName("lineageSnpTable")
 		# Set Rows and Columns to a first value so i can init the view
@@ -1135,17 +1149,29 @@ class Ui_MainWindow(QMainWindow):
 		# 3. LED
 		self._lineageSnpLED=QLed(self, onColour=QLed.Green,offColour=QLed.Red, shape=QLed.Circle)
 		self._lineageSnpLED.setFixedSize(18,18)
-		# 5. Webengine view
+		# 4. Dominant lineage table
+		self.lineageSumsTable = QTableWidget(self.lineageSnpFrame)
+		self.lineageSumsTable.setObjectName("lineageSumsTable")
+		self.lineageSumsTable.setColumnCount(4)
+		self.lineageSumsTable.setRowCount(1)
+		self.lineageSumsTable.setStyleSheet(Style.style_table_standard)
+		# 5. Dominant lineage label
+		self.lineageSumsLabel = QLabel(self.lineageSnpFrame)
+		self.lineageSumsLabel.setFont(font4)
+		self.lineageSumsLabel.setText("Proportion of lineages")
+		# 6. Webengine view
 		self.snpBrowser = QWebEngineView()
 		self.snpBrowser.setObjectName("lineageSnpBrowser")
 		self.lineageSnpGridLayout.addWidget(self.lineageSnpLabel, 0, 0, 1, 1)
 		self.lineageSnpGridLayout.addWidget(self._lineageSnpLED, 0, 1, 1, 1)
-		self.lineageSnpGridLayout.addWidget(self.lineageSnpTable, 1, 0, 3, 5)
+		self.lineageSnpGridLayout.addWidget(self.lineageSnpTable, 1, 0, 1, 3)
+		self.lineageSnpGridLayout.addWidget(self.lineageSumsLabel, 0, 3, 1, 1)
+		self.lineageSnpGridLayout.addWidget(self.lineageSumsTable, 1, 3, -1, 2)
 		self.lineageSnpGridLayout.addWidget(self.snpBrowser, 0, 5, -1, 3)
 
 		self.lineageSnpVerticalLayout.addLayout(self.lineageSnpGridLayout)
-		# self.resultsPageVerticalLayoutForFrames.addWidget(self.lineageSnpFrame)
 		self.resultsPageGridLayoutForFrames.addWidget(self.lineageSnpFrame,3,0,2,-1)
+		
 		############# Cancer SNPs Frame
 		self.cancerSnpFrame = QFrame(self.resultsPage)
 		self.cancerSnpFrame.setMinimumSize(QSize(0, 150))
@@ -1194,8 +1220,8 @@ class Ui_MainWindow(QMainWindow):
 		self.cancerSnpTable.verticalHeader().setStretchLastSection(True)
 
 		self.cancerSnpVerticalLayout.addLayout(self.cancerSnpGridLayout)
-		# self.resultsPageVerticalLayoutForFrames.addWidget(self.cancerSnpFrame)
 		self.resultsPageGridLayoutForFrames.addWidget(self.cancerSnpFrame,5,0,2,-1)
+		
 		############# Trees Frame
 
 		self.treeFrame = QFrame(self.resultsPage)
@@ -1353,15 +1379,15 @@ class Style():
 	}
 	"""
 	)
-	style_bt_disabled = (
+	style_bt_highlight = (
 	"""
 	QPushButton {
 		background-image: ICON_REPLACE;
 		background-position: left center;
 		background-repeat: no-repeat;
 		border: none;
-		border-left: 28px solid #5B6481;
-		background-color: #5B6481;
+		border-left: 28px solid #3c57b0;
+		background-color: #3c57b0;
 		text-align: left;
 		padding-left: 45px;
 	}
@@ -1377,8 +1403,8 @@ class Style():
 		padding-left: 45px;
 	}
 	QPushButton:hover {
-		background-color: rgb(33, 37, 43);
-		border-left: 28px solid rgb(33, 37, 43);
+		background-color: #486899;
+		border-left: 28px solid #486899;
 	}
 	QPushButton:pressed {
 		background-color: rgb(85, 170, 255);

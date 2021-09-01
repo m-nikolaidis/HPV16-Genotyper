@@ -4,16 +4,13 @@ import pathlib
 import logging
 import datetime
 import argparse
-import numpy as np
 import pandas as pd
 import multiprocessing
-from Bio import SeqIO
 # Tool modules
 import annot
 import blast
 import env_setup
 import phylogeny
-import visualizations
 
 def _init_binaries(system: sys.platform) -> list:
 	"""
@@ -22,11 +19,11 @@ def _init_binaries(system: sys.platform) -> list:
 	return: List of string
 	"""
 	if "win" in system:
-		makeblastdb_bin = pathlib.Path(__file__).parent / 'resources/Win_bin/makeblastdb.exe'
-		blastn_bin = pathlib.Path(__file__).parent / 'resources/Win_bin/blastn.exe'
-		muscle_bin= pathlib.Path(__file__).parent / 'resources/Win_bin/muscle3.8.31.exe'
-		seaview_bin = pathlib.Path(__file__).parent / 'resources/Win_bin/seaview.exe'
-		phyml_bin = pathlib.Path(__file__).parent / 'resources/Win_bin/PhyML-3.1_win32.exe'
+		makeblastdb_bin = pathlib.Path(__file__).parent / "resources\\Win_bin\\makeblastdb.exe"
+		blastn_bin = pathlib.Path(__file__).parent / "resources\\Win_bin\\blastn.exe"
+		muscle_bin= pathlib.Path(__file__).parent / "resources\\Win_bin\\muscle3.8.31.exe"
+		seaview_bin = pathlib.Path(__file__).parent / "resources\\Win_bin\\seaview.exe"
+		phyml_bin = pathlib.Path(__file__).parent / "resources\\Win_bin\\PhyML-3.1_win32.exe"
 		raise Warning("Windows BLAST fails for some reason when using biopython, but runs correctly from PowerShell")
 		# TODO: Investigate the warning
 		# Maybe it is because of the / in the string
@@ -42,8 +39,8 @@ def _init_binaries(system: sys.platform) -> list:
 
 def _defaultparams() -> dict:
 	system = sys.platform
-	input_dir = pathlib.Path(os.getcwd()) / pathlib.Path("input") # The user should provide the input dir cmd? just like the orthologues pipeline
-	query_f = pathlib.Path(os.getcwd()) / pathlib.Path("input/Input.fasta") # The user should provide the input dir cmd? just like the orthologues pipeline
+	input_dir = "" # The user should provide the input dir cmd? just like the orthologues pipeline
+	query_f = "" # The user should provide the input dir cmd? just like the orthologues pipeline
 	outdir = pathlib.Path(os.getcwd()) / pathlib.Path("Script_out") 
 	threads_to_use =  multiprocessing.cpu_count() - 2
 	params = {
@@ -91,7 +88,7 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	annot_f = pathlib.Path(paramsdf.loc["SNP_annotation_file","Value"])
 	
 	# Grab the root logger instance and use it for logging
-	logfile = outdir / pathlib.Path("logfile.log")
+	logfile = outdir / pathlib.Path(".logfile.log")
 	logger = logging.getLogger()
 	fhandler = logging.FileHandler(filename=logfile)
 	formatter = logging.Formatter("%(asctime)s\t%(message)s")
@@ -104,7 +101,6 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	for index in indeces:
 		val = paramsdf.loc[index,"Value"]
 		logging.info(F"param: {index},{val}")
-
 
 	# Environment setup
 	env_setup.file_exists(query_f_path)
@@ -132,41 +128,7 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	aln_files = phylogeny.profile_aln(outdir,aln_files,profiledb_dir, muscle_bin, exe=exe)
 	trees_dir = phylogeny.build_trees(outdir, aln_files, phyml_bin, seaview_bin, exe=exe)
 	
-	# Clean tmp directory if user wants to save space before graphics
-	# TODO: Implement
-	
-	geneid_res_df = pd.read_excel(geneid_blastn_res_path_xlsx, engine="openpyxl")
-	color_dict = {
-		"A":"#00ff00",
-		"B":"#0080ff",
-		"C":"#ff8000",
-		"D":"#ff0000"
-	}
-	recombinants = blast.find_recombinants(geneid_res_df)
-	visualizations.GeneID_fig(geneid_res_df, outdir, profiledb_dir, color_dict, recombinants)
-	
-	num_snps = annot.annotate_results(annot_f,snp_blastn_res_path_xlsx,exe=exe)
-	
-	# 
-	L_snp_resultsdf = pd.read_excel(snp_blastn_res_path_xlsx,index_col=0, engine="openpyxl")
-	L_snp_resultsdf = L_snp_resultsdf.drop("Nucleotides")
-	L_snp_resultsdf = L_snp_resultsdf.T
-	L_snp_resultsdf = L_snp_resultsdf.head(num_snps)
-	L_snp_results_annot = outdir / "SNPs_results.xlsx"
-	L_snp_resultsdf_annot = pd.read_excel(L_snp_results_annot,index_col=0, engine="openpyxl")
-	L_snp_resultsdf_annot = L_snp_resultsdf_annot.T
-	L_snp_resultsdf_annot = L_snp_resultsdf_annot.head(num_snps)
-	color_dict = {
-		"Lin_A":"#00ff00",
-		"Lin_B":"#0080ff",
-		"Lin_C":"#ff8000",
-		"Lin_D":"#ff0000",
-		"Lin_BCD":"#ebeb34",
-		"Other":"#ffffff"
-	}
-	visualizations.SNP_fig(L_snp_resultsdf_annot, outdir, color_dict, L_snp_resultsdf, recombinants)
-
-	visualizations.render_trees(trees_dir, outdir)
+	annot.annotate_results(annot_f,snp_blastn_res_path_xlsx,exe=exe)
 
 	return trees_dir, outdir
 
@@ -214,10 +176,5 @@ if __name__ == "__main__":
 	params_viz = False
 	if params_viz:
 		phylogeny.visualize_trees() # TODO: Needs implementation
-	if params_tree_render:
-		visualizations.render_trees(trees_dir, outdir, mode=params_tree_render)
-	else:
-		visualizations.render_trees(trees_dir, outdir)
 	end_dt_str = now.strftime("%d/%m/%Y %H:%M:%S")
 	print("Application started at: %s \n Finished at %s" %(start_dt_string, end_dt_str))
-	# logging.info("The scripts started at: %s \n Finished at %s" %(start_dt_string, end_dt_str))

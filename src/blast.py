@@ -155,7 +155,9 @@ def parse_GeneID_results(blastres_f_path, params, exe=True):
 	return geneID_results_path
 #TODO: Need to add more info in the cancer snps
 # Query position of SNP, ....
-def parse_SNP_results(blastres_f_path, exe=True, cancer=False):
+def parse_SNP_results(blastres_f_path: pathlib.Path, 
+	exe:bool = True, cancer:bool = False
+	) -> pathlib.Path:
 	"""
 	Reads the blast output files and ...
 	TODO: Write me
@@ -179,6 +181,12 @@ def parse_SNP_results(blastres_f_path, exe=True, cancer=False):
 		# TODO CHECK IF IT IS POSSIBLE
 		sbjct_pos = 0
 		middle_pos = (round(probe_len/2) - sstart) + 1 # Round so in case of odd number, i get int
+		# This is not right. Because i dont know which part of the
+		# probe has the hit
+		# Need to fix it.
+		# Should check the probe in the total length (subject probe fasta) to figure out
+		# which part is aligned. And then get the original probe middle nucleotide
+		# TODO: Fix me
 		for x in range(len(subjct_aln)):
 			if subjct_aln[x] != "-":
 				sbjct_pos += 1
@@ -187,59 +195,67 @@ def parse_SNP_results(blastres_f_path, exe=True, cancer=False):
 		return ["X",1]
 
 	probe_len = 31 # TODO; should be calculated automatically or provided
-	blast_res = {}
 	probe_table_res = {}
 	blast_records= NCBIXML.parse(open(blastres_f_path))
 
 	for blast_record in blast_records: # Each blast record is the total res for a specific query
 		qorg = blast_record.query
-		if qorg not in blast_res:
-			blast_res[qorg] = {"qaccver":qorg,
-				"saccver":"",
-				"qstart":0,
-				"qend":0,
-				"sstart":0,
-				"send":0,
-				"length":0,
-				"pident":0,
-				"mismatch":0,
-				"evalue":1,
-				"alignment":"",
-				"Query_nucl":"X",
-				"Query_genomic_pos":0
-			}
 		if qorg not in probe_table_res:
 			probe_table_res[qorg] = {}
-
 		for alignment in blast_record.alignments: # One aln for each query - subject hit
 			subjct_probe = alignment.hit_def # alignment.hit_def is the subject name
 			if subjct_probe not in probe_table_res[qorg]:
-				probe_table_res[qorg][subjct_probe] = ["X",1] 
+				if cancer:
+					probe_table_res[qorg][subjct_probe] = {
+					"Query nucleotide": "X",
+					"Query position": 1,
+					"E-value": 1
+					} 
+				else:
+					probe_table_res[qorg][subjct_probe] = ["X",1] 
 				# First value is going to be qnucl aligned at center of probe
 				# Second value is going to be the evalue of hsp
 			
 			# alignment.length is the total aln length?
 			for hsp in alignment.hsps: # Each query - subject hit has multiple hsps (blast hits)
 				qstart =  hsp.query_start
-				qend =  hsp.query_end
 				sstart =  hsp.sbjct_start
-				send =  hsp.sbjct_end
 				evalue = hsp.expect 
 				hsp_len = hsp.align_length
-				hsp_aln_str =  hsp.query + "\n" + hsp.match + "\n" + hsp.sbjct
-				if evalue < probe_table_res[qorg][subjct_probe][1]:
-					tmp = _get_aln_nucl(hsp.query,hsp.sbjct,hsp.sbjct_start,probe_len)
-					probe_table_res[qorg][subjct_probe][0] = tmp[0]
-					probe_table_res[qorg][subjct_probe][1] = evalue
-	for qorg in probe_table_res:
-		for subjct_probe in probe_table_res[qorg]:
-			probe_table_res[qorg][subjct_probe] = probe_table_res[qorg][subjct_probe][0]
-	probedf = pd.DataFrame.from_dict(probe_table_res,orient='index')
-	probedf_cols = list(probedf.columns)
-	probedf_cols = _sort_alphanumeric(probedf_cols)
-	probedf = probedf[probedf_cols]
-	probedf.index.name = "Sequences"
-	probedf.to_excel(probe_results_path,na_rep="X")
+				if cancer:
+					if evalue < probe_table_res[qorg][subjct_probe]["E-value"]:
+						tmp = _get_aln_nucl(hsp.query,hsp.sbjct,sstart,probe_len)
+						query_pos = qstart + tmp[1]  # Probe middle nucl pos in query
+						probe_table_res[qorg][subjct_probe]["Query nucleotide"] = tmp[0]
+						probe_table_res[qorg][subjct_probe]["Query position"] = query_pos
+						probe_table_res[qorg][subjct_probe]["E-value"] = float('{:0.3e}'.format(evalue))
+				else:
+					if evalue < probe_table_res[qorg][subjct_probe][1]:
+						tmp = _get_aln_nucl(hsp.query,hsp.sbjct,hsp.sbjct_start,probe_len)
+						probe_table_res[qorg][subjct_probe][0] = tmp[0]
+						probe_table_res[qorg][subjct_probe][1] = evalue
+	if cancer:
+		tmpdict = {}
+		for k, item in probe_table_res.items():
+			v = pd.DataFrame.from_dict(item,orient="index")
+			v.index.name = "SNP"
+			tmpdict[k] = v
+		probedf = pd.concat(tmpdict,axis=0)
+		probedf.index.names = ["Sequences", "SNP"]
+		probedf = probedf.reset_index()
+		print(F"This is the df {probedf}")
+		print(F"This is the path {probe_results_path}")
+		probedf.to_excel(probe_results_path,na_rep="X")
+	else:
+		for qorg in probe_table_res:
+			for subjct_probe in probe_table_res[qorg]:
+				probe_table_res[qorg][subjct_probe] = probe_table_res[qorg][subjct_probe][0]
+		probedf = pd.DataFrame.from_dict(probe_table_res,orient='index')
+		probedf_cols = list(probedf.columns)
+		probedf_cols = _sort_alphanumeric(probedf_cols)
+		probedf = probedf[probedf_cols]
+		probedf.index.name = "Sequences"
+		probedf.to_excel(probe_results_path,na_rep="X")
 	return probe_results_path
 
 

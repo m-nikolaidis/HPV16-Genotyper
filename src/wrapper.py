@@ -15,42 +15,36 @@ import env_setup
 import phylogeny
 import visualizations
 
-def _init_binaries(system):
-	"""Initialize the paths for the needed binaries depending on the system
+def _init_binaries(system: sys.platform) -> list:
+	"""
+	Initialize the paths for the needed binaries depending on the system
 	input: System info
-	return: List of pathlib paths
+	return: List of string
 	"""
 	if "win" in system:
-		makeblastdb_bin = os.path.join(str(pathlib.Path(__file__)), 
-			str(pathlib.Path('../resources/Win_bin/makeblastdb.exe'))).replace(os.path.basename(__file__) + "\\", "")
-		blastn_bin = os.path.join(str(pathlib.Path(__file__)), 
-			str(pathlib.Path('../resources/Win_bin/blastn.exe'))).replace(os.path.basename(__file__) + "\\", "")
-		muscle_bin= os.path.join(str(pathlib.Path(__file__)), 
-			str(pathlib.Path('../resources/Win_bin/muscle3.8.31.exe'))).replace(os.path.basename(__file__) + "\\", "")
-		seaview_bin = os.path.join(str(pathlib.Path(__file__)), 
-			str(pathlib.Path('../resources/Win_bin/seaview.exe'))).replace(os.path.basename(__file__) + "\\", "")
-		phyml_bin = os.path.join(str(pathlib.Path(__file__)), 
-			str(pathlib.Path('../resources/Win_bin/PhyML-3.1_win32.exe'))).replace(os.path.basename(__file__) + "\\", "")
+		makeblastdb_bin = pathlib.Path(__file__).parent / 'resources/Win_bin/makeblastdb.exe'
+		blastn_bin = pathlib.Path(__file__).parent / 'resources/Win_bin/blastn.exe'
+		muscle_bin= pathlib.Path(__file__).parent / 'resources/Win_bin/muscle3.8.31.exe'
+		seaview_bin = pathlib.Path(__file__).parent / 'resources/Win_bin/seaview.exe'
+		phyml_bin = pathlib.Path(__file__).parent / 'resources/Win_bin/PhyML-3.1_win32.exe'
 		raise Warning("Windows BLAST fails for some reason when using biopython, but runs correctly from PowerShell")
 		# TODO: Investigate the warning
+		# Maybe it is because of the / in the string
 	if "linux" in system:
-		makeblastdb_bin = os.path.join(str(pathlib.Path(__file__)), 
-			str(pathlib.Path('../resources/Linux_bin/makeblastdb'))).replace(os.path.basename(__file__) + "/", "")
-		blastn_bin = os.path.join(str(pathlib.Path(__file__)), 
-			str(pathlib.Path('../resources/Linux_bin/blastn'))).replace(os.path.basename(__file__) + "/", "")
-		muscle_bin = os.path.join(str(pathlib.Path(__file__)), 
-			str(pathlib.Path('../resources/Linux_bin/muscle3.8.31_i86linux'))).replace(os.path.basename(__file__) + "/", "")
-		seaview_bin = os.path.join(str(pathlib.Path(__file__)), 
-			str(pathlib.Path('../resources/Linux_bin/seaview4'))).replace(os.path.basename(__file__) + "/", "")
-		phyml_bin = os.path.join(str(pathlib.Path(__file__)), 
-			str(pathlib.Path('../resources/Linux_bin/PhyML-3.1_linux64'))).replace(os.path.basename(__file__) + "/", "")
-	return [makeblastdb_bin,blastn_bin,muscle_bin,seaview_bin,phyml_bin]
+		makeblastdb_bin = pathlib.Path(__file__).parent / 'resources/Linux_bin/makeblastdb'
+		blastn_bin = pathlib.Path(__file__).parent / 'resources/Linux_bin/blastn'
+		muscle_bin = pathlib.Path(__file__).parent / 'resources/Linux_bin/muscle3.8.31_i86linux'
+		seaview_bin = pathlib.Path(__file__).parent / 'resources/Linux_bin/seaview4'
+		phyml_bin = pathlib.Path(__file__).parent / 'resources/Linux_bin/PhyML-3.1_linux64'
+	return [str(makeblastdb_bin), str(blastn_bin), str(muscle_bin), 
+			str(seaview_bin), str(phyml_bin)
+			]
 
-def _defaultparams():
+def _defaultparams() -> dict:
 	system = sys.platform
-	input_dir = pathlib.Path(os.getcwd()) / pathlib.Path("../input") # The user should provide the input dir cmd? just like the orthologues pipeline
-	query_f = pathlib.Path(os.getcwd()) / pathlib.Path("../input/Input.fasta") # The user should provide the input dir cmd? just like the orthologues pipeline
-	outdir = pathlib.Path(os.getcwd()) / pathlib.Path("../Script_out")
+	input_dir = pathlib.Path(os.getcwd()) / pathlib.Path("input") # The user should provide the input dir cmd? just like the orthologues pipeline
+	query_f = pathlib.Path(os.getcwd()) / pathlib.Path("input/Input.fasta") # The user should provide the input dir cmd? just like the orthologues pipeline
+	outdir = pathlib.Path(os.getcwd()) / pathlib.Path("Script_out") 
 	threads_to_use =  multiprocessing.cpu_count() - 2
 	params = {
 		"system": system,
@@ -60,18 +54,18 @@ def _defaultparams():
 		"query": query_f,
 		"SNP_identification_Evalue": 0.005,
 		"SNP_identification_Word_Size": 4,
-		"SNP_annotation_file": pathlib.Path(os.getcwd()) / pathlib.Path('../resources/SNPs_annotation.xlsx'),
-		"SNP_db_path": pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/NC_001526_probes.fa'),
-		"cSNP_db_path": pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/NC_001526_cancer_probes.fa'),
+		"SNP_annotation_file": pathlib.Path(os.getcwd()) / pathlib.Path('resources/SNPs_annotation.xlsx'),
+		"SNP_db_path": pathlib.Path(os.getcwd()) / pathlib.Path('resources/sequences/NC_001526_probes.fa'),
+		"cSNP_db_path": pathlib.Path(os.getcwd()) / pathlib.Path('resources/sequences/NC_001526_cancer_probes.fa'),
 		"Gene_identification_Evalue": 1e-5, 
 		"Gene_identification_Word_size": 7,
-		"GenesProfile_directory": pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/profiles'),
-		"GenesRef_database":pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/16refs_gene_db.fa'),
-		"SimplotRef_database":pathlib.Path(os.getcwd()) / pathlib.Path('../resources/sequences/Reference_genomes_profile_mafft_GINSI.fa')
+		"GenesProfile_directory": pathlib.Path(os.getcwd()) / pathlib.Path('resources/sequences/profiles'),
+		"GenesRef_database":pathlib.Path(os.getcwd()) / pathlib.Path('resources/sequences/16refs_gene_db.fa'),
+		"SimplotRef_database":pathlib.Path(os.getcwd()) / pathlib.Path('resources/sequences/Reference_genomes_profile_mafft_GINSI.fa')
 	}
 	return params
 
-def writeParamFile(outdir):
+def writeParamFile(outdir: pathlib.Path) -> None:
 	"""Intialize the default parameters and write them to the param.xlsx file
 	The user should have the option to output a reference param file and change it accordingly
 	"""
@@ -85,7 +79,7 @@ def writeParamFile(outdir):
 	param_df.index.name = "Parameter"
 	param_df.to_excel(params_f)
 
-def main(paramsdf, exe=True):
+def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	# Basic variables
 	outdir = pathlib.Path(paramsdf.loc["out","Value"])
 	env_setup.create_dirs(outdir, exist_ok=True)
@@ -129,7 +123,7 @@ def main(paramsdf, exe=True):
 	snp_blastn_res_path_xlsx = blast.parse_SNP_results(snp_blastn_res_path, exe=exe)
 	workflow = "cancer"
 	C_snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
-	C_snp_blastn_res_path_xlsx = blast.parse_SNP_results(C_snp_blastn_res_path, exe=exe,cancer=True)
+	blast.parse_SNP_results(C_snp_blastn_res_path, exe=exe,cancer=True)
 	
 
 	# Gene alignments and trees
@@ -204,8 +198,8 @@ if __name__ == "__main__":
 
 	create_annot = False
 	if create_annot:
-		fin = "../input/signature_nucl_data_20210602_for_params.xlsx" # TODO: Fix to Take it from params
-		annot_f = pathlib.Path("../input/annot.xlsx") # TODO: Fix to Take it from params
+		fin = "input/signature_nucl_data_20210602_for_params.xlsx" # TODO: Fix to Take it from params
+		annot_f = pathlib.Path("input/annot.xlsx") # TODO: Fix to Take it from params
 		annot.create_annot_file(fin,annot_f)
 		# Output this in the input directory?
 

@@ -15,9 +15,8 @@ def create_dirs(outdir, exist_ok=False):
 		profiles_out = script_out / pathlib.Path("Profile_alns") # Final profile alns for each gene
 		trees_out = script_out / pathlib.Path("Phylogenetic_Trees")
 		graphics_out = script_out / pathlib.Path("Graphics")
-		gene_sim_graphics = graphics_out / pathlib.Path("GeneSim")
-		snp_graphics = graphics_out / pathlib.Path("SNP_detection")
-		tree_render = graphics_out / pathlib.Path("Trees_images")
+		gene_sim_graphics = graphics_out / pathlib.Path("GeneIdentification")
+		snp_graphics = graphics_out / pathlib.Path("LineageSpecificSNPs")
 		
 		script_out.mkdir(exist_ok=True)
 		tmp_out.mkdir(exist_ok=exist_ok)
@@ -28,7 +27,6 @@ def create_dirs(outdir, exist_ok=False):
 		graphics_out.mkdir(exist_ok=exist_ok)
 		gene_sim_graphics.mkdir(exist_ok=exist_ok)
 		snp_graphics.mkdir(exist_ok=exist_ok)
-		tree_render.mkdir(exist_ok=exist_ok)
 
 def file_exists(f):
 	"""Empty docstring

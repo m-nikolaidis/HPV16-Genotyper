@@ -34,14 +34,14 @@ from Bio import SeqIO
 from QLed import QLed
 from PyQt5.QtGui import (QPixmap, 
 	QFont, QFontDatabase, QIcon, QPalette,
-	QBrush, QColor
+	QBrush, QColor, QDesktopServices
 )
 from PyQt5.QtCore import ( Qt, QObject, QThread, 
 	pyqtSignal, QUrl, QCoreApplication, QSize, QRect,
 	QMetaObject	
 )
 from PyQt5.QtWidgets import (
-	QApplication, QLabel, QMainWindow, QSpacerItem,
+	QApplication, QLabel, QListWidgetItem, QMainWindow, QSpacerItem,
 	QWidget, QTableWidget, QTableWidgetItem, 
 	QFileDialog, QGridLayout, QVBoxLayout,
 	QPushButton, QScrollArea, QHBoxLayout, QButtonGroup,
@@ -50,6 +50,7 @@ from PyQt5.QtWidgets import (
 	QAbstractScrollArea, QAbstractItemView,
 	QTextBrowser, QErrorMessage
 )
+
 # from PySide2 import QtCharts
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
@@ -94,15 +95,12 @@ class MainWindow(QMainWindow):
 		self.ui = Ui_MainWindow()
 		self.ui.setupUi(self)
 		self.ui.retranslateUi(self)
-
 		startSize = QSize(1000, 720)
 		self.resize(startSize)
 		self.setMinimumSize(startSize)
-
 		self.ui.stackedWidget.setMinimumWidth(20)
 		GuiFunctions.addNewMenu(self, "Main Page", "homeButton", "url(:/16x16/icons/16x16/cil-home.png)", True)
 		GuiFunctions.addHomeButtons(self)
-
 
 		# Select home menu on init
 		GuiFunctions.selectStandardMenu(self, "homeButton")
@@ -137,7 +135,6 @@ class MainWindow(QMainWindow):
 			btnWidget.setStyleSheet(GuiFunctions.selectMenu(btnWidget.styleSheet()))
 		if btnWidget.objectName() == "resultsButton":
 			self.ui.stackedWidget.setCurrentWidget(self.ui.resultsPage)
-			# Will customise ui.resultsPage to results
 			GuiFunctions.resetStyle(self, "resultsButton")
 			GuiFunctions.updatePageLabel(self, "Results")
 			btnWidget.setStyleSheet(GuiFunctions.selectMenu(btnWidget.styleSheet()))
@@ -195,7 +192,6 @@ class GuiFunctions(MainWindow):
 		else:
 			self.ui.layout_menu_bottom.addWidget(button)
 
-	## Select / deselect menus
 	def selectMenu(getStyle):
 		select = getStyle + ("QPushButton { border-right: 7px solid rgb(44, 49, 60); }")
 		return select
@@ -408,7 +404,7 @@ class GuiFunctions(MainWindow):
 
 	##### Results page functions
 	
-	def initVariables(self):
+	def initVariables(self: QMainWindow):
 		# self is mainW
 		self.dfBlast = pd.read_excel(self.outdir / "GeneIdentification_results.xlsx", engine="openpyxl")
 		# TODO: Need to drop certain columns in the output
@@ -487,9 +483,21 @@ class GuiFunctions(MainWindow):
 			if tableName == "blastResTable":
 				if mainW.dfBlast.size == 0: return
 				tmpdf = mainW.dfBlast[mainW.dfBlast["qaccver"] == mainW.selectedSeq]
+				tmpdf = tmpdf[["Database","Gene","Lineage","sstart","send","Sequences","qstart","qend","length","pident","evalue"]]
+				tmpdf["evalue"] = tmpdf["evalue"].apply(lambda x: F"{x:.2e}")
+				tmpdf.rename({
+					"sstart":"Subject start",
+					"send":"Subject end",
+					"qstart":"Query start",
+					"qend":"Query end",
+					"length":"Aln length",
+					"pident":"Perc. Identity",
+					"evalue":"E-value"
+				},axis=1, inplace=True)
 			if tableName == "lineageSnpTable":
 				if mainW.dfLineageSnp.size == 0: return
 				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq].tail(1)
+				print(tmpdf)
 			if tableName == "lineageSumsTable":
 				tmpdf = tmpdf.T.tail(8) # This tmpdf should be the lineageSnpTable one
 				tmpdf["Lineage"] = tmpdf.index
@@ -502,25 +510,37 @@ class GuiFunctions(MainWindow):
 				tmpdf.sort_values(by=["Query position"],inplace=True,ignore_index=True)
 				tmpdf.drop("Unnamed: 0",axis=1, inplace=True)
 				tmpdf = tmpdf[["SNP","Sequences","Query nucleotide", "Query position", "E-value"]]
-			table.setRowCount(tmpdf.shape[0])
+			
+			if tableName == "lineageSumsTable":
+				tmp = tmpdf["Proportion"].values
+				zeroes = 0
+				for i in tmp:
+					if i == 0: zeroes += 1
+				table.setRowCount(tmpdf.shape[0] - zeroes)
+			else:
+				table.setRowCount(tmpdf.shape[0])
+			
 			table.setColumnCount(tmpdf.shape[1])
 			table.setHorizontalHeaderLabels(tmpdf.columns)
 			rowNum = 0
 			for row in tmpdf.iterrows():
 				values = row[1]
+				if tableName == "lineageSumsTable" and values["Proportion"] == 0:
+					continue
 				for colIdx, value in enumerate(values):
 					tableItem = QTableWidgetItem(str(value))
 					table.setItem(rowNum, colIdx, tableItem)
 				rowNum += 1
 			table.resizeColumnsToContents()
-			# TODO: Make the tables uneditable
 			
 			table.horizontalHeader().setCascadingSectionResizes(True)
 			if tableName != "lineageSnpTable":
 				table.horizontalHeader().setDefaultSectionSize(int(1100 / tmpdf.shape[1]))
 			if tableName == "lineageSumsTable":
 				table.horizontalHeader().setDefaultSectionSize(120)
-	def displayGraphs(self):
+				
+	def displayGraphs(self: QListWidgetItem):
+		mainW.ui.graphicsList = []
 		browsers = [mainW.ui.geneIDBrowser, mainW.ui.snpBrowser]
 		for browser in browsers:
 			browserName = browser.objectName()
@@ -534,12 +554,14 @@ class GuiFunctions(MainWindow):
 				fig.update_layout(height=200, legend_y=1.5)
 			if browserName == "lineageSnpBrowser":
 				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq]
-				tmpdf = tmpdf.T
-				to_drop = ["Lin_A", "Lin_ABC", "Lin_ABD",
-				 "Lin_ACD", "Other", "Lin_BCD", "Lin_D",
-				 "Dominant lineage"
-				]
-				tmpdf.drop(index=to_drop,inplace=True,axis=0)
+				tmpdf = tmpdf.T.head(67) # num of lineage specific snps
+				to_replace = {"Lin_ABD":"Other", "Lin_ABC":"Other", 
+				"Lin_ABD":"Other", "Lin_ACD":"Other"
+				}
+				# TODO: Is the replace method good for the output?
+				# Or is it wrong?
+				# Ask amoutzias
+				tmpdf.replace(to_replace,inplace=True)
 				tmpdf.columns=["Nucleotide","Lineage"]
 				tmpdf["SNP reference pos"] = tmpdf.index
 				tmpdf["SNP reference pos"] = tmpdf["SNP reference pos"].apply(lambda x: int(x.split("_")[2]) )
@@ -550,6 +572,7 @@ class GuiFunctions(MainWindow):
 				color_discrete_map=mainW.lineageSpecificSnpColorDict
 				)
 				fig.update_layout(xaxis_type = 'linear', height=200, legend_y=1.5)
+			mainW.ui.graphicsList.append(fig)
 			browser.setHtml(fig.to_html(include_plotlyjs='cdn'))
 
 	# Clean tmp directory after quiting
@@ -557,6 +580,19 @@ class GuiFunctions(MainWindow):
 	# also save the html graphics in the corresponding directory
 	# and remove if the user does not press save graphics
 	# TODO: Implement those above
+
+	def displayCancerSnpInfo(self: QTableWidgetItem) -> None:
+		cSnp = mainW.ui.cancerSnpTable.item(self.row(),0).text()
+		m = re.match(r"(\S+_NuclPos_\d+).+", cSnp)
+		cSnp = m.group(1) + ".md"
+		fin = pathlib.Path(__file__).parent / pathlib.Path("resources") / pathlib.Path("cSNPinfo") / cSnp 
+		mainW.ui.cancerSnpTextBrowser.setSource(QUrl(str(fin)))
+	
+	def openPubmedUrl(self: QUrl) -> None:
+		if "#citations" in self.toString():
+			return
+		else:
+			QDesktopServices.openUrl(self)
 
 	def eteInteractive(self):
 		buttonId = mainW.ui.TreesRenderButtonGroup.button(self).text()
@@ -622,6 +658,17 @@ class GuiFunctions(MainWindow):
 		)
 		mainW.simplotW.show()
 
+	def saveGraphics(self):
+		for i in range(len(mainW.ui.graphicsList)):
+			fig = mainW.ui.graphicsList[i]
+			name = pathlib.Path(mainW.outdir) / pathlib.Path("Graphics")
+			if i == 0:
+				name = name / pathlib.Path("GeneIdentification")
+			if i == 1:
+				name = name / pathlib.Path("LineageSpecificSNPs")
+			name = name / (mainW.selectedSeq + ".html")
+			fig.write_html(str(name),include_plotlyjs='cdn')
+
 class LogWindow(QMainWindow):
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -647,34 +694,6 @@ class LogWindow(QMainWindow):
 		self.show()
 
 class Simplot_page(QMainWindow):
-	####
-	# NEED TO DO STYLING CHANGES
-	####
-
-			# Need it for Simplot
-		# self.pushButton = QPushButton(self.frame_content_wid_1)
-		# self.pushButton.setObjectName(u"pushButton")
-		# self.pushButton.setMinimumSize(QSize(150, 30))
-		# font8 = QFont()
-		# font8.setFamily(u"Segoe UI")
-		# font8.setPointSize(9)
-		# self.pushButton.setFont(font8)
-		# self.pushButton.setStyleSheet(u"QPushButton {\n"
-		# "	border: 2px solid rgb(52, 59, 72);\n"
-		# "	border-radius: 5px;	\n"
-		# "	background-color: rgb(52, 59, 72);\n"
-		# "}\n"
-		# "QPushButton:hover {\n"
-		# "	background-color: rgb(57, 65, 80);\n"
-		# "	border: 2px solid rgb(61, 70, 86);\n"
-		# "}\n"
-		# "QPushButton:pressed {	\n"
-		# "	background-color: rgb(35, 40, 49);\n"
-		# "	border: 2px solid rgb(43, 50, 61);\n"
-		# "}")
-		# icon3 = QIcon()
-		# icon3.addFile(u":/16x16/icons/16x16/cil-folder-open.png", QSize(), QIcon.Normal, QIcon.Off)
-		# self.pushButton.setIcon(icon3)
 	def __init__(self, sequence, window_size, step, aln_f, parent=None):
 		super().__init__(parent)
 		self.setWindowTitle("Similarity plot")
@@ -974,115 +993,43 @@ class Ui_MainWindow(QMainWindow):
 		self.gridLayout.setContentsMargins(-1, -1, -1, 0)
 		
 		# Widgets
+		# 1. Label
+		self.listFrameLabel = QLabel(self.listFrame)
+		self.listFrameLabel.setFont(font4)
+		self.listFrameLabel.setText("Analyzed sequences")
+		# 2. Line edit
 		self.lineEdit = QLineEdit(self.frame_content_wid_1)
 		self.lineEdit.setObjectName(u"lineEdit")
 		self.lineEdit.setMinimumSize(QSize(0, 30))
-		self.lineEdit.setStyleSheet(
-			"""
-			QLineEdit {
-				background-color: rgb(27, 29, 35);
-				border-radius: 5px;
-				border: 2px solid rgb(27, 29, 35);
-				padding-left: 10px;
-			}
-			QLineEdit:hover {
-				border: 2px solid rgb(64, 71, 88);
-			}
-			QLineEdit:focus {
-				border: 2px solid rgb(91, 101, 124);
-			}
-			"""
-		)
+		self.lineEdit.setStyleSheet(Style.style_line_edit)
 		self.listWidget = QListWidget()
 		self.listWidget.resize(100,100)
-		self.listWidget.setStyleSheet(
-			"""
-			 QScrollBar:vertical {
-				border: none;
-				background: rgb(52, 59, 72);
-				width: 14px;
-				margin: 5px 0 5px 0;
-				border-radius: 0px;
-			 }
-			 QScrollBar::handle:vertical {	
-				background: rgb(85, 170, 255);
-				min-height: 25px;
-				border-radius: 7px;
-			 }
-			 QScrollBar::add-line:vertical {
-				border: none;
-				background: rgb(55, 63, 77);
-				height: 20px;
-				border-bottom-left-radius: 7px;
-				border-bottom-right-radius: 7px;
-				subcontrol-position: bottom;
-				subcontrol-origin: margin;
-			 }
-			 QScrollBar::sub-line:vertical {
-				border: none;
-				background: rgb(55, 63, 77);
-				height: 20px;
-				border-top-left-radius: 7px;
-				border-top-right-radius: 7px;
-				subcontrol-position: top;
-				subcontrol-origin: margin;
-			 }
-			 QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {
-				background: none;
-			 }
-			 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-				 background: none;
-			}
-			"""		
-		)
+		self.listWidget.setStyleSheet(Style.style_list_widget)
 		self.lineEdit.textChanged.connect(GuiFunctions.filterList)
 
 		self.listWidget.itemDoubleClicked.connect(GuiFunctions.updateResultsTables)
 		self.listWidget.itemDoubleClicked.connect(GuiFunctions.displayGraphs)
 		self.listWidget.itemDoubleClicked.connect(GuiFunctions.updateLed)
-
+		#3. Check box
 		self.recSeqsCheckBox = QCheckBox(self.listFrame)
-		self.recSeqsCheckBox.setStyleSheet(
-			"""
-			QCheckBox::indicator {\n"
-				border: 3px solid rgb(52, 59, 72);\n"
-				width: 15px;\n"
-				height: 15px;\n"
-				border-radius: 10px;\n"
-				background: rgb(44, 49, 60);\n"
-			}
-			QCheckBox::indicator:hover {
-				border: 3px solid rgb(58, 66, 81);
-			}
-			QCheckBox::indicator:checked {
-			background: 3px solid rgb(52, 59, 72);
-			border: 3px solid rgb(52, 59, 72);
-			background-image: url(:/16x16/icons/16x16/cil-check-alt.png);
-			}
-			"""
-		)
+		self.recSeqsCheckBox.setStyleSheet(Style.style_checkbox)
 		self.recSeqsCheckBox.setText("Show\nputative recombinants\nonly") # TODO: set the word position to center
 		self.recSeqsCheckBox.stateChanged.connect(GuiFunctions.updateListWidget)
-
-		# TODO: Implement a function to filter the list view: clear content, then add from recseqslist
 
 		self.horizontalLayout_9.addLayout(self.gridLayout)
 		self.verticalLayout_7.addWidget(self.frame_content_wid_1)
 		self.verticalLayout_15.addWidget(self.frame_div_content_1)
-		# self.resultsPageVerticalLayoutForFrames.addWidget(self.listFrame)
 		self.resultsPageGridLayoutForFrames.addWidget(self.listFrame,0,0,1,-1)
 
-		self.gridLayout.addWidget(self.lineEdit, 0, 0, 1, 1)
-		self.gridLayout.addWidget(self.recSeqsCheckBox,0,1,-1,1)
-		self.gridLayout.addWidget(self.listWidget, 1, 0, 2, 1)
+		self.gridLayout.addWidget(self.listFrameLabel, 0, 0, 1, 1)
+		self.gridLayout.addWidget(self.lineEdit, 1, 0, 1, 1)
+		self.gridLayout.addWidget(self.recSeqsCheckBox,1,1,-1,1)
+		self.gridLayout.addWidget(self.listWidget, 2, 0, 2, 1)
 
 		############# Blast results frame #############
 		self.blastResFrame = QFrame(self.resultsPage)
 		self.blastResFrame.setMinimumSize(QSize(0, 150))
-		self.blastResFrame.setStyleSheet("""
-			background-color: rgb(39, 44, 54);
-			border-radius: 5px;
-		""")
+		self.blastResFrame.setStyleSheet(Style.style_results_frame)
 		self.blastResFrame.setFrameShape(QFrame.StyledPanel)
 		self.blastResFrame.setFrameShadow(QFrame.Raised)
 
@@ -1096,7 +1043,7 @@ class Ui_MainWindow(QMainWindow):
 		self.blastLabel = QLabel(self.blastResFrame)
 		self.blastLabel.setObjectName("blastLabel")
 		self.blastLabel.setFont(font4)
-		self.blastLabel.setText("BLAST results")
+		self.blastLabel.setText("Gene identification")
 		# 2. Table
 		self.blastResTable = QTableWidget(self.blastResFrame)
 		self.blastResTable.setObjectName("blastResTable")
@@ -1122,10 +1069,7 @@ class Ui_MainWindow(QMainWindow):
 		############# Lineage Specific SNPs Frame
 		self.lineageSnpFrame = QFrame(self.resultsPage)
 		self.lineageSnpFrame.setMinimumSize(QSize(0, 150))
-		self.lineageSnpFrame.setStyleSheet("""
-				background-color: rgb(39, 44, 54);
-				border-radius: 5px;
-		""")
+		self.lineageSnpFrame.setStyleSheet(Style.style_results_frame)
 		self.lineageSnpFrame.setFrameShape(QFrame.StyledPanel)
 		self.lineageSnpFrame.setFrameShadow(QFrame.Raised)
 
@@ -1175,10 +1119,7 @@ class Ui_MainWindow(QMainWindow):
 		############# Cancer SNPs Frame
 		self.cancerSnpFrame = QFrame(self.resultsPage)
 		self.cancerSnpFrame.setMinimumSize(QSize(0, 150))
-		self.cancerSnpFrame.setStyleSheet("""
-				background-color: rgb(39, 44, 54);
-				border-radius: 5px;
-		""")
+		self.cancerSnpFrame.setStyleSheet(Style.style_results_frame)
 		self.cancerSnpFrame.setFrameShape(QFrame.StyledPanel)
 		self.cancerSnpFrame.setFrameShadow(QFrame.Raised)
 
@@ -1198,16 +1139,14 @@ class Ui_MainWindow(QMainWindow):
 		self.cancerSnpTable.setColumnCount(5)
 		self.cancerSnpTable.setRowCount(5)
 		self.cancerSnpTable.setStyleSheet(Style.style_table_standard)
+		self.cancerSnpTable.itemClicked.connect(GuiFunctions.displayCancerSnpInfo)
 		# Text browser
 		self.cancerSnpTextBrowser = QTextBrowser()
 		self.cancerSnpTextBrowser.setMinimumSize(QSize(0,70))
-		# self.cancerSnpTextBrowser.setSource(QUrl("/media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/resources/cSNP.md"))
-		# TODO: use this for the update
 		self.cancerSnpTextBrowser.setMaximumWidth(500)
-		self.cancerSnpTextBrowser.setStyleSheet(
-			"background: white;"
-		)
-		# TODO: Fix problem with links
+		self.cancerSnpTextBrowser.setStyleSheet(Style.style_text_browser)
+		self.cancerSnpTextBrowser.setOpenLinks(False)
+		self.cancerSnpTextBrowser.anchorClicked.connect(GuiFunctions.openPubmedUrl)
 
 		self.cancerSnpGridLayout.addWidget(self.cancnerSnpLabel, 0, 0, 1, 1)
 		self.cancerSnpGridLayout.addWidget(self.cancerSnpTable, 1, 0, 3, 2)
@@ -1223,13 +1162,9 @@ class Ui_MainWindow(QMainWindow):
 		self.resultsPageGridLayoutForFrames.addWidget(self.cancerSnpFrame,5,0,2,-1)
 		
 		############# Trees Frame
-
 		self.treeFrame = QFrame(self.resultsPage)
 		self.treeFrame.setMinimumSize(QSize(0, 150))
-		self.treeFrame.setStyleSheet("""
-			background-color: rgb(39, 44, 54);
-			border-radius: 5px;
-		""")
+		self.treeFrame.setStyleSheet(Style.style_results_frame)
 		self.treeFrame.setFrameShape(QFrame.StyledPanel)
 		self.treeFrame.setFrameShadow(QFrame.Raised)
 		self.treeGridLayout = QGridLayout(self.treeFrame)
@@ -1246,7 +1181,7 @@ class Ui_MainWindow(QMainWindow):
 		# TODO: mainW is not defined. can't use mainW variables
 		# I am in child of mainW
 		self.genes = ["E6", "E7", "E1", "E2", "E4", "E5", "L2", "L1"]
-		self.treeGridLayout.addWidget(self.treeLabel, 0, 0, 1, 1)
+		self.treeGridLayout.addWidget(self.treeLabel, 0, 0,1,2)
 		for gene in self.genes:
 			self.treeButton = QPushButton(gene)
 			self.treeButton.setObjectName(F"treeButton{gene}")
@@ -1293,9 +1228,10 @@ class Ui_MainWindow(QMainWindow):
 		self.simplotButtonAreaWidgetLayout = QGridLayout()
 		self.simplotButton = QPushButton("Calculate Simplot")
 		self.simplotButton.setStyleSheet(Style.style_push_button)
-		self.windowSizeSpinBox = QSpinBox(maximum=10000,value=300)
+		self.windowSizeSpinBox = QSpinBox(maximum=100000,value=300)
 		self.windowSizeSpinBox.setStyleSheet(Style.style_spinbox)
-		self.stepSizeSpinBox = QSpinBox(maximum=10000, value=100)
+		self.stepSizeSpinBox = QSpinBox(maximum=100000, value=100)
+		self.stepSizeSpinBox.setStyleSheet(Style.style_spinbox)
 		self.simplotButtonAreaWidgetLayout.addWidget(self.simplotButtonAreaWidgetSimplotLabel,0,0,1,2)
 		self.simplotButtonAreaWidgetLayout.addWidget(self.simplotButtonAreaWidgetWindowLabel,1,1)
 		self.simplotButtonAreaWidgetLayout.addWidget(self.simplotButtonAreaWidgetStepLabel,2,1)
@@ -1309,8 +1245,41 @@ class Ui_MainWindow(QMainWindow):
 		self.SimplotGridLayout.addWidget(self.simplotButtonAreaWidget, 1, 0, 3, 5)
 
 		self.SimplotVerticalLayout.addLayout(self.SimplotGridLayout)
-		# self.resultsPageVerticalLayoutForFrames.addWidget(self.SimplotFrame)
 		self.resultsPageGridLayoutForFrames.addWidget(self.SimplotFrame,7,4,1,1)
+		
+		# Save graphics frame
+		self.saveGraphicsFrame = QFrame(self.resultsPage)
+		self.saveGraphicsFrame.setMinimumSize(QSize(0,150))
+		self.saveGraphicsFrame.setStyleSheet(Style.style_results_frame)
+		self.saveGraphicsFrame.setFrameShape(QFrame.StyledPanel)
+		self.saveGraphicsFrame.setFrameShadow(QFrame.Raised)
+
+		self.saveGraphicsVBoxLayout = QVBoxLayout(self.saveGraphicsFrame)
+		self.saveGraphicsFrameButton = QPushButton(self.saveGraphicsFrame)
+		self.saveGraphicsFrameButton.setMinimumSize(QSize(150,30))
+		self.saveGraphicsFrameButton.setFont(QFont("Segoe UI",9))
+		self.saveGraphicsFrameButton.setStyleSheet(
+			u"QPushButton {\n"
+			"	border: 2px solid rgb(52, 59, 72);\n"
+			"	border-radius: 5px;	\n"
+			"	background-color: rgb(52, 59, 72);\n"
+			"}\n"
+			"QPushButton:hover {\n"
+			"	background-color: rgb(57, 65, 80);\n"
+			"	border: 2px solid rgb(61, 70, 86);\n"
+			"}\n"
+			"QPushButton:pressed {	\n"
+			"	background-color: rgb(35, 40, 49);\n"
+			"	border: 2px solid rgb(43, 50, 61);\n"
+			"}"
+		)
+		icon = QIcon()
+		icon.addFile(":/16x16/icons/16x16/cil-save.png", QSize(), QIcon.Normal, QIcon.Off)
+		self.saveGraphicsFrameButton.setIcon(icon)
+		self.saveGraphicsFrameButton.setText("Save graphics")
+		self.saveGraphicsFrameButton.clicked.connect(GuiFunctions.saveGraphics)
+		self.saveGraphicsVBoxLayout.addWidget(self.saveGraphicsFrameButton)
+		self.resultsPageGridLayoutForFrames.addWidget(self.saveGraphicsFrame,7,5,1,1)
 		# / Add the results page here
 		
 		self.stackedWidget.addWidget(self.homePage)
@@ -1414,22 +1383,22 @@ class Style():
 	)
 	style_table_standard = ("""
 			QTableWidget {
-				border: none;
-				border-radius: 5px
+				border: 2px;
+				border-radius: 5px;
 			}
-			 QScrollBar:vertical {
+			QScrollBar:vertical {
 				border: none;
 				background: rgb(52, 59, 72);
 				width: 14px;
 				margin: 5px 0 5px 0;
 				border-radius: 0px;
-			 }
-			 QScrollBar::handle:vertical {	
+			}
+			QScrollBar::handle:vertical {	
 				background: rgb(85, 170, 255);
 				min-height: 25px;
 				border-radius: 7px;
-			 }
-			 QScrollBar::add-line:vertical {
+			}
+			QScrollBar::add-line:vertical {
 				border: none;
 				background: rgb(55, 63, 77);
 				height: 20px;
@@ -1437,8 +1406,8 @@ class Style():
 				border-bottom-right-radius: 7px;
 				subcontrol-position: bottom;
 				subcontrol-origin: margin;
-			 }
-			 QScrollBar::sub-line:vertical {
+			}
+			QScrollBar::sub-line:vertical {
 				border: none;
 				background: rgb(55, 63, 77);
 				height: 20px;
@@ -1446,10 +1415,10 @@ class Style():
 				border-top-right-radius: 7px;
 				subcontrol-position: top;
 				subcontrol-origin: margin;
-			 }
+			}
 			 QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {
 				background: none;
-			 }
+			}
 			 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
 				 background: none;
 			}
@@ -1479,11 +1448,138 @@ class Style():
 			border: 2px solid rgb(52, 59, 72);
 			border-radius: 5px;
 			background-color: rgb(52, 59, 72);
-		} 
+		}
+		QScrollBar:vertical {
+			border: none;
+			background: rgb(52, 59, 72);
+			width: 14px;
+			margin: 5px 0 5px 0;
+			border-radius: 0px;
+		}
+		QScrollBar::handle:vertical {	
+			background: rgb(85, 170, 255);
+			min-height: 25px;
+			border-radius: 7px;
+		}
+		QScrollBar::add-line:vertical {
+			border: none;
+			background: rgb(55, 63, 77);
+			height: 20px;
+			border-bottom-left-radius: 7px;
+			border-bottom-right-radius: 7px;
+			subcontrol-position: bottom;
+			subcontrol-origin: margin;
+		}
+		QScrollBar::sub-line:vertical {
+			border: none;
+			background: rgb(55, 63, 77);
+			height: 20px;
+			border-top-left-radius: 7px;
+			border-top-right-radius: 7px;
+			subcontrol-position: top;
+			subcontrol-origin: margin;
+		}
+		 QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {
+			background: none;
+		}
+		 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+			 background: none;
+		}
 		"""
 		#TODO: Implement this
 	)
+	style_text_browser = (
+		"""
+		QTextBrowser {
+			border: 2px solid rgb(52, 59, 72);
+			border-radius: 5px;
+			background-color: rgb(52, 59, 72);
+		}
 
+
+		"""
+	)
+	style_list_widget = (
+		"""
+		 QScrollBar:vertical {
+			border: none;
+			background: rgb(52, 59, 72);
+			width: 14px;
+			margin: 5px 0 5px 0;
+			border-radius: 0px;
+		 }
+		 QScrollBar::handle:vertical {	
+			background: rgb(85, 170, 255);
+			min-height: 25px;
+			border-radius: 7px;
+		 }
+		 QScrollBar::add-line:vertical {
+			border: none;
+			background: rgb(55, 63, 77);
+			height: 20px;
+			border-bottom-left-radius: 7px;
+			border-bottom-right-radius: 7px;
+			subcontrol-position: bottom;
+			subcontrol-origin: margin;
+		 }
+		 QScrollBar::sub-line:vertical {
+			border: none;
+			background: rgb(55, 63, 77);
+			height: 20px;
+			border-top-left-radius: 7px;
+			border-top-right-radius: 7px;
+			subcontrol-position: top;
+			subcontrol-origin: margin;
+		 }
+		 QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {
+			background: none;
+		 }
+		 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+			 background: none;
+		}
+		"""	
+	)
+	style_checkbox = (
+		"""
+		QCheckBox::indicator {\n"
+			border: 3px solid rgb(52, 59, 72);\n"
+			width: 15px;\n"
+			height: 15px;\n"
+			border-radius: 10px;\n"
+			background: rgb(44, 49, 60);\n"
+		}
+		QCheckBox::indicator:hover {
+			border: 3px solid rgb(58, 66, 81);
+		}
+		QCheckBox::indicator:checked {
+		background: 3px solid rgb(52, 59, 72);
+		border: 3px solid rgb(52, 59, 72);
+		background-image: url(:/16x16/icons/16x16/cil-check-alt.png);
+		}
+		"""
+	)
+	style_line_edit = (
+		"""
+		QLineEdit {
+			background-color: rgb(27, 29, 35);
+			border-radius: 5px;
+			border: 2px solid rgb(27, 29, 35);
+			padding-left: 10px;
+		}
+		QLineEdit:hover {
+			border: 2px solid rgb(64, 71, 88);
+		}
+		QLineEdit:focus {
+			border: 2px solid rgb(91, 101, 124);
+		}
+		"""
+	)
+	style_results_frame = (
+		"""
+		background-color: rgb(39, 44, 54);
+		border-radius: 5px;
+		"""
+	)
 if __name__ == "__main__":
 	app = QApplication(sys.argv)
 	mainW = MainWindow()

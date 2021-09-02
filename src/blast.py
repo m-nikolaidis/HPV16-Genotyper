@@ -158,7 +158,9 @@ def parse_GeneID_results(blastres_f_path: pathlib.Path,
 
 	blastdf = pd.concat(df_list)
 	blastdf.index = range(len(blastdf))
-	blastdf["Sequences"] = blastdf["qaccver"]
+	blastdf["Sequence"] = blastdf["qaccver"]
+	# Rename qaccver etc to reduce the unessecary output and add better understanding
+	# TODO:
 	indeces = blastdf.index
 	for idx in indeces:
 		saccver = blastdf.loc[idx,"saccver"]

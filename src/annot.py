@@ -4,7 +4,9 @@ import pathlib
 import numpy as np
 from collections import Counter
 
-def create_annot_file(f, annot_f, prefix="Lin", empty="Other"):
+def create_annot_file(f: pathlib.Path, annot_f: pathlib.Path, 
+	prefix: str="Lin", empty: str="Other"
+	) -> None:
 	"""
 	TODO: Write me
 	"""
@@ -33,7 +35,7 @@ def create_annot_file(f, annot_f, prefix="Lin", empty="Other"):
 
 def annotate_results(annot_f: pathlib.Path,probe_res: pathlib.Path,
 	empty: str ="Other",exe: bool=True
-	) -> None:
+	) -> int:
 	"""
 	Probe results is the file that has mapped each nucleotide results of the probe blast
 	For the non ATGC character value will be automatically Other
@@ -96,3 +98,4 @@ def annotate_results(annot_f: pathlib.Path,probe_res: pathlib.Path,
 	tmpdf.index.name = "Index"
 	tmpdf.fillna("X",inplace=True)
 	tmpdf.to_excel(probe_res, engine=xl_engine)
+	return num_snps

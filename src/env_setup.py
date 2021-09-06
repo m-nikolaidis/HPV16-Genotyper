@@ -9,7 +9,7 @@ def create_dirs(outdir, exist_ok=False):
 		Perform the necessary actions to set up the script working environment
 		"""
 		script_out = outdir
-		tmp_out = script_out / pathlib.Path("tmp_dir")
+		tmp_out = script_out / pathlib.Path(".tmp")
 		tmp_genes_out = tmp_out / pathlib.Path("Gene_seqs") # Gene files of batch size
 		tmp_alignments_out = tmp_out / pathlib.Path("Alignments") # Alignment of batch genes
 		profiles_out = script_out / pathlib.Path("Profile_alns") # Final profile alns for each gene
@@ -18,7 +18,7 @@ def create_dirs(outdir, exist_ok=False):
 		gene_sim_graphics = graphics_out / pathlib.Path("GeneIdentification")
 		snp_graphics = graphics_out / pathlib.Path("LineageSpecificSNPs")
 		
-		script_out.mkdir(exist_ok=True)
+		script_out.mkdir(exist_ok=exist_ok, parents=True)
 		tmp_out.mkdir(exist_ok=exist_ok)
 		tmp_genes_out.mkdir(exist_ok=exist_ok)
 		tmp_alignments_out.mkdir(exist_ok=exist_ok)
@@ -128,7 +128,3 @@ def dir_priviledges(path):
 		logging.critical(F"Program has no write permission on {path} \u274C")
 		raise PermissionError(" You dont have the required priviledges in the specified output directory ")
 	logging.info(F"Have permission to write on {path} \u2705")
-
-def clean_tmp_dir(path):
-	pass
-	logging.info("Cleaning - temporary directories ")

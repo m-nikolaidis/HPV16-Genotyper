@@ -19,28 +19,25 @@ def _init_binaries(system: sys.platform) -> list:
 	return: List of string
 	"""
 	if "win" in system:
-		makeblastdb_bin = pathlib.Path(__file__).parent / "resources\\Win_bin\\makeblastdb.exe"
-		blastn_bin = pathlib.Path(__file__).parent / "resources\\Win_bin\\blastn.exe"
-		muscle_bin= pathlib.Path(__file__).parent / "resources\\Win_bin\\muscle3.8.31.exe"
-		seaview_bin = pathlib.Path(__file__).parent / "resources\\Win_bin\\seaview.exe"
-		phyml_bin = pathlib.Path(__file__).parent / "resources\\Win_bin\\PhyML-3.1_win32.exe"
-		raise Warning("Windows BLAST fails for some reason when using biopython, but runs correctly from PowerShell")
-		# TODO: Investigate the warning
-		# Maybe it is because of the / in the string
+		makeblastdb_bin = pathlib.Path(__file__).parent / "resources" / "Win_bin" / "makeblastdb.exe"
+		blastn_bin = pathlib.Path(__file__).parent / "resources" / "Win_bin" / "blastn.exe"
+		muscle_bin= pathlib.Path(__file__).parent / "resources" / "Win_bin" / "muscle3.8.31.exe"
+		seaview_bin = pathlib.Path(__file__).parent / "resources" / "Win_bin" / "seaview.exe"
+		phyml_bin = pathlib.Path(__file__).parent / "resources" / "Win_bin" / "PhyML-3.1_win32.exe"
 	if "linux" in system:
-		makeblastdb_bin = pathlib.Path(__file__).parent / 'resources/Linux_bin/makeblastdb'
-		blastn_bin = pathlib.Path(__file__).parent / 'resources/Linux_bin/blastn'
-		muscle_bin = pathlib.Path(__file__).parent / 'resources/Linux_bin/muscle3.8.31_i86linux'
-		seaview_bin = pathlib.Path(__file__).parent / 'resources/Linux_bin/seaview4'
-		phyml_bin = pathlib.Path(__file__).parent / 'resources/Linux_bin/PhyML-3.1_linux64'
+		makeblastdb_bin = pathlib.Path(__file__).parent / "resources" / "Linux_bin" / "makeblastdb"
+		blastn_bin = pathlib.Path(__file__).parent / "resources" / "Linux_bin" / "blastn"
+		muscle_bin = pathlib.Path(__file__).parent / "resources" / "Linux_bin" / "muscle3.8.31_i86linux"
+		seaview_bin = pathlib.Path(__file__).parent / "resources" / "Linux_bin" / "seaview4"
+		phyml_bin = pathlib.Path(__file__).parent / "resources" / "Linux_bin" / "PhyML-3.1_linux64"
 	return [str(makeblastdb_bin), str(blastn_bin), str(muscle_bin), 
 			str(seaview_bin), str(phyml_bin)
 			]
 
 def _defaultparams() -> dict:
 	system = sys.platform
-	input_dir = "" # The user should provide the input dir cmd? just like the orthologues pipeline
-	query_f = "" # The user should provide the input dir cmd? just like the orthologues pipeline
+	input_dir = ""
+	query_f = ""
 	outdir = pathlib.Path(os.getcwd()) / pathlib.Path("Script_out") 
 	threads_to_use =  multiprocessing.cpu_count() - 2
 	params = {
@@ -51,30 +48,16 @@ def _defaultparams() -> dict:
 		"query": query_f,
 		"SNP_identification_Evalue": 0.005,
 		"SNP_identification_Word_Size": 4,
-		"SNP_annotation_file": pathlib.Path(os.getcwd()) / pathlib.Path('resources/SNPs_annotation.xlsx'),
-		"SNP_db_path": pathlib.Path(os.getcwd()) / pathlib.Path('resources/sequences/NC_001526_probes.fa'),
-		"cSNP_db_path": pathlib.Path(os.getcwd()) / pathlib.Path('resources/sequences/NC_001526_cancer_probes.fa'),
+		"SNP_annotation_file": pathlib.Path(os.getcwd()) / 'resources'/ 'SNPs_annotation.xlsx',
+		"SNP_db_path": pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'NC_001526_probes.fa',
+		"cSNP_db_path": pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'NC_001526_cancer_probes.fa',
 		"Gene_identification_Evalue": 1e-5, 
 		"Gene_identification_Word_size": 7,
-		"GenesProfile_directory": pathlib.Path(os.getcwd()) / pathlib.Path('resources/sequences/profiles'),
-		"GenesRef_database":pathlib.Path(os.getcwd()) / pathlib.Path('resources/sequences/16refs_gene_db.fa'),
-		"SimplotRef_database":pathlib.Path(os.getcwd()) / pathlib.Path('resources/sequences/Reference_genomes_profile_mafft_GINSI.fa')
+		"GenesProfile_directory": pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'profiles',
+		"GenesRef_database":pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / '16refs_gene_db.fa',
+		"SimplotRef_database":pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'Reference_genomes_profile_mafft_GINSI.fa'
 	}
 	return params
-
-def writeParamFile(outdir: pathlib.Path) -> None:
-	"""Intialize the default parameters and write them to the param.xlsx file
-	The user should have the option to output a reference param file and change it accordingly
-	"""
-	if outdir.is_dir():
-		params_f = outdir / pathlib.Path("params.xlsx")
-	else:
-		params_f = outdir
-	params = _defaultparams()
-	param_df = pd.DataFrame.from_dict(params,orient='index')
-	param_df.rename(columns={0:"Value"},inplace=True)
-	param_df.index.name = "Parameter"
-	param_df.to_excel(params_f)
 
 def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	# Basic variables
@@ -90,7 +73,7 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	# Grab the root logger instance and use it for logging
 	logfile = outdir / pathlib.Path(".logfile.log")
 	logger = logging.getLogger()
-	fhandler = logging.FileHandler(filename=logfile)
+	fhandler = logging.FileHandler(filename=logfile, encoding="UTF-8")
 	formatter = logging.Formatter("%(asctime)s\t%(message)s")
 	fhandler.setFormatter(formatter)
 	logger.addHandler(fhandler)
@@ -121,60 +104,12 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	C_snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
 	blast.parse_SNP_results(C_snp_blastn_res_path, exe=exe,cancer=True)
 	
-
 	# Gene alignments and trees
-	aln_files = phylogeny.prepare_alns(outdir, query_f_path,geneid_blastn_res_path_xlsx, muscle_bin, exe=exe)
+	aln_files = phylogeny.prepare_alns(outdir, query_f_path, geneid_blastn_res_path_xlsx, muscle_bin, exe=exe)
 	profiledb_dir = paramsdf.loc["GenesProfile_directory","Value"]
 	aln_files = phylogeny.profile_aln(outdir,aln_files,profiledb_dir, muscle_bin, exe=exe)
+	# if organisms > 20, method = "BioNJ" TODO: Implement
 	trees_dir = phylogeny.build_trees(outdir, aln_files, phyml_bin, seaview_bin, exe=exe)
-	
 	annot.annotate_results(annot_f,snp_blastn_res_path_xlsx,exe=exe)
 
 	return trees_dir, outdir
-
-if __name__ == "__main__":
-	# Arguments
-	parser = argparse.ArgumentParser(description="HPV16 genotyping tool CLI")
-	parser.add_argument('--p_in', metavar="F",type=str,help='Absolute or relative path to the existing parameters file')
-	parser.add_argument('--p_out', metavar="F",type=str,help='Directory to write the default parameters file')
-	parser.add_argument('--clean', metavar="bool",type=bool,help='Remove the tmp directories created during execution (True / False)')
-	parser.add_argument('--vis', metavar="bool",type=bool,help='Visualize phylogenetic trees on ete3 library. If this is false the trees will be rendered as images')
-	parser.add_argument('--tree_render', metavar="Format",type=str,help='Type of file to render the phylogenetic trees available types: jpg (Default), pdf, png')
-	
-	# TODO: Add a dual switch p_in and p_out. Either read or write parameters file, and make them positional
-	args = parser.parse_args()
-	
-	params_o = args.p_out
-	params_i = args.p_in
-	params_clean = args.clean
-	params_viz = args.vis
-	params_tree_render = args.tree_render
-	
-	now = datetime.datetime.now()
-	start_dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
-	
-	if params_o:
-		writeParamFile(params_o)
-		print("Created parameters file successfully, please rerun the script using the parameters file")
-		sys.exit(0) # Kill the CLI when outputing parameters file
-
-	create_annot = False
-	if create_annot:
-		fin = "input/signature_nucl_data_20210602_for_params.xlsx" # TODO: Fix to Take it from params
-		annot_f = pathlib.Path("input/annot.xlsx") # TODO: Fix to Take it from params
-		annot.create_annot_file(fin,annot_f)
-		# Output this in the input directory?
-
-	paramsdf = pd.read_excel(params_i,index_col=0, engine='openpyxl')
-	trees_dir, outdir = main(paramsdf)
-	
-	if params_clean:
-		env_setup.clean_tmp()
-		# TODO: Implement this
-
-	# Visualizations
-	params_viz = False
-	if params_viz:
-		phylogeny.visualize_trees() # TODO: Needs implementation
-	end_dt_str = now.strftime("%d/%m/%Y %H:%M:%S")
-	print("Application started at: %s \n Finished at %s" %(start_dt_string, end_dt_str))

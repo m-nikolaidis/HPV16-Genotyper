@@ -2,17 +2,13 @@ import pathlib
 import numpy as np
 from Bio import AlignIO
 from Bio.Align.Applications import MuscleCommandline
-# "Reference_genomes_profile_mafft_GINSI.fa"
-
-# TODO: Need to make the seqs_dict global for the non gui script (Maybe i should just add the QApplication non GUI functionality)
-# So it doesn't get initialized everytime the function is called
 
 def _isolate_sequence(seqs_dict, recseq, outpath):
 	"""
 	Helper function
 	Write the selected sequence in a temporary file in order to create a simplot
 	"""
-	randname = np.random.randint(0,100000000000)
+	randname = np.random.randint(0,1000)
 	fout =  outpath / pathlib.Path(str(randname) + ".fa")
 	sequence = str(seqs_dict[recseq].seq).upper()
 	fh = open(fout,"w")

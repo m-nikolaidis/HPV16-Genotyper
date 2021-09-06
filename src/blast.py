@@ -3,6 +3,7 @@ import logging
 import pathlib
 import numpy as np
 import pandas as pd
+from collections import Counter
 from Bio import SeqIO
 from Bio.Blast import NCBIXML
 from Bio.Blast.Applications import NcbiblastnCommandline, NcbimakeblastdbCommandline
@@ -25,7 +26,6 @@ def blastn_search(exe_params,query_f_path, workflow,makeblastdb_bin,blastn_bin,e
 		blastres_f = query_f_path.stem + "_HPV16_Blastn_res.xml"
 		evalue = exe_params.loc['Gene_identification_Evalue',"Value"]
 		word_size = exe_params.loc['Gene_identification_Word_size',"Value"]
-	
 	if workflow == "gene identification":
 		logging.info("Starting - BLASTn search for gene identification")
 		db_path = pathlib.Path(exe_params.loc['GenesRef_database',"Value"])
@@ -33,7 +33,6 @@ def blastn_search(exe_params,query_f_path, workflow,makeblastdb_bin,blastn_bin,e
 		blastres_f = "GeneIdentification_Blastn_results.xml"
 		evalue = exe_params.loc['Gene_identification_Evalue',"Value"]
 		word_size = exe_params.loc['Gene_identification_Word_size',"Value"]
-	
 	if workflow == "snp":
 		logging.info("Starting - BLASTn search for Lineage specific SNPs")
 		db_path = pathlib.Path(exe_params.loc['SNP_db_path',"Value"])
@@ -50,7 +49,7 @@ def blastn_search(exe_params,query_f_path, workflow,makeblastdb_bin,blastn_bin,e
 		evalue = exe_params.loc["SNP_identification_Evalue","Value"]
 		word_size = exe_params.loc["SNP_identification_Word_Size","Value"]
 	
-	tmp = pathlib.Path("tmp_dir")
+	tmp = pathlib.Path(".tmp")
 	dbout = outdir / tmp / db_file
 	blastres_f_path = outdir / blastres_f
 
@@ -82,7 +81,6 @@ def _sort_alphanumeric(iteratable):
 	sorting_key = lambda key: [ int_convert(c) for c in re.split('([0-9]+)', key) ] 
 	return sorted(iteratable, key = sorting_key)
 
-
 def parse_GeneID_results(blastres_f_path: pathlib.Path, 
 		params: pd.DataFrame, 
 		exe:bool =True
@@ -94,41 +92,39 @@ def parse_GeneID_results(blastres_f_path: pathlib.Path,
 		geneID_results_path = blastres_f_path.with_name(blastres_f_path.stem + "_GeneID.xlsx")
 		return geneID_results_path
 	
-	def _get_db_lengths(db_path):
-		dblengths = {}
-		seqrecords = SeqIO.parse(db_path,"fasta")
-		for seqrecord in seqrecords:
-			name = seqrecord.id
-			seqlen = len(str(seqrecord.seq))
-			dblengths[name] = seqlen
-		return dblengths
+	# def _get_db_lengths(db_path):
+	# 	dblengths = {}
+	# 	seqrecords = SeqIO.parse(db_path,"fasta")
+	# 	for seqrecord in seqrecords:
+	# 		name = seqrecord.id
+	# 		seqlen = len(str(seqrecord.seq))
+	# 		dblengths[name] = seqlen
+	# 	return dblengths
 	logging.info("Parsing - gene identification results ")
 	
-	db_path = pathlib.Path(params.loc["GenesRef_database","Value"])
-	dblengths = _get_db_lengths(db_path)
+	# db_path = pathlib.Path(params.loc["GenesRef_database","Value"])
+	# dblengths = _get_db_lengths(db_path)
 	blast_records= NCBIXML.parse(open(blastres_f_path))
 	blast_res = {}
 	for blast_record in blast_records: # Each blast record is the total res for a specific query
 		qorg = blast_record.query
 		if qorg not in blast_res:
 			blast_res[qorg] = {}
-
 		for alignment in blast_record.alignments: # One aln for each query - subject hit
 			subjct = alignment.hit_def # alignment.hit_def is the subject name
-			subjct_name = subjct[:-3]
 			gene = subjct[-2:]
 			if gene not in blast_res[qorg]:
 				blast_res[qorg][gene] = {
-				"qaccver":qorg,
-				"saccver":None,
-				"qstart":0,
-				"qend":0,
-				"sstart":0,
-				"send":0,
-				"length":0,
-				"pident":0,
-				"evalue":1,
-				"subject_covhsp":0,
+				"Query sequence":qorg,
+				"Subject sequence":None,
+				"Query start":0,
+				"Query end":0,
+				"Subject start":0,
+				"Subject end":0,
+				"Aln length":0,
+				"Perc. identity":0,
+				"E-value":1,
+				# "subject_covhsp":0,
 				# "subject_covtotal":0,
 				}
 			# alignment.length is the total aln length?
@@ -140,49 +136,50 @@ def parse_GeneID_results(blastres_f_path: pathlib.Path,
 				evalue = hsp.expect 
 				hsp_len = hsp.align_length
 				pident =  hsp.identities / hsp.align_length # As calculated in NCBI blast2seq
-				if evalue < blast_res[qorg][gene]["evalue"]: # Keep only the best hsp result
-					blast_res[qorg][gene]["saccver"] = subjct
-					blast_res[qorg][gene]["qstart"] = qstart
-					blast_res[qorg][gene]["qend"] = qend
-					blast_res[qorg][gene]["sstart"] = sstart 
-					blast_res[qorg][gene]["send"] = send
-					blast_res[qorg][gene]["evalue"] = evalue
-					blast_res[qorg][gene]["length"] = hsp_len
-					blast_res[qorg][gene]["pident"] = round((pident*100),3)
-					blast_res[qorg][gene]["subject_covhsp"] = round((hsp_len/dblengths[subjct])*100,3)
-
+				if evalue < blast_res[qorg][gene]["E-value"]: # Keep only the best hsp result
+					blast_res[qorg][gene]["Subject sequence"] = subjct
+					blast_res[qorg][gene]["Query start"] = qstart
+					blast_res[qorg][gene]["Query end"] = qend
+					blast_res[qorg][gene]["Subject start"] = sstart 
+					blast_res[qorg][gene]["Subject end"] = send
+					blast_res[qorg][gene]["E-value"] = evalue
+					blast_res[qorg][gene]["Aln length"] = hsp_len
+					blast_res[qorg][gene]["Perc. identity"] = round((pident*100),3)
+					# blast_res[qorg][gene]["subject_covhsp"] = round((hsp_len/dblengths[subjct])*100,3)
 	df_list = []
 	for k in blast_res:
 		tmpdf = pd.DataFrame.from_dict(blast_res[k],orient='index')
 		df_list.append(tmpdf)
-
 	blastdf = pd.concat(df_list)
+	blastdf["Gene"] = blastdf.index
 	blastdf.index = range(len(blastdf))
-	blastdf["Sequence"] = blastdf["qaccver"]
-	# Rename qaccver etc to reduce the unessecary output and add better understanding
-	# TODO:
 	indeces = blastdf.index
 	for idx in indeces:
-		saccver = blastdf.loc[idx,"saccver"]
-		db, gene = saccver.split("_")
-		blastdf.loc[idx,"Database"] = db
-		blastdf.loc[idx,"Gene"] = gene
-		blastdf.loc[idx,"Lineage"] = db[0] 
+		saccver = blastdf.loc[idx,"Subject sequence"]
+		blastdf.loc[idx,"Lineage"] = saccver[0]
+	blastdf = blastdf[[
+				"Query sequence",
+				"Gene",
+				"Lineage",
+				"Query start",
+				"Query end",
+				"Subject sequence",
+				"Subject start",
+				"Subject end",
+				"Aln length",
+				"Perc. identity",
+				"E-value"
+	]]
 	geneID_results_path = blastres_f_path.parent / "GeneIdentification_results.xlsx"
 	blastdf.to_excel(geneID_results_path,index=False)
 	return geneID_results_path
-
 
 def parse_SNP_results(blastres_f_path: pathlib.Path, 
 	exe:bool = True, cancer:bool = False
 	) -> pathlib.Path:
 	"""
-	Reads the blast output files and ...
-	TODO: Write me
-	cancer parameter is used to differentiate from Lineage specific SNPs and cancer SNPs
-	Return None
+	Cancer parameter is used to differentiate from Lineage specific SNPs and cancer SNPs
 	"""
-	
 	if cancer:
 		probe_results_path = blastres_f_path.parent / "cancerSNP_results.xlsx"
 		logging.info("Parsing - increased cancer risk SNP results ")
@@ -211,7 +208,7 @@ def parse_SNP_results(blastres_f_path: pathlib.Path,
 					return (query_aln[x], sbjct_pos)
 		return ["X",1]
 
-	probe_len = 31 # TODO; should be calculated automatically or provided
+	probe_len = 31
 	probe_table_res = {}
 	blast_records= NCBIXML.parse(open(blastres_f_path))
 
@@ -233,7 +230,6 @@ def parse_SNP_results(blastres_f_path: pathlib.Path,
 				# First value is going to be qnucl aligned at center of probe
 				# Second value is going to be the evalue of hsp
 			
-			# alignment.length is the total aln length?
 			for hsp in alignment.hsps: # Each query - subject hit has multiple hsps (blast hits)
 				qstart =  hsp.query_start
 				sstart =  hsp.sbjct_start
@@ -258,7 +254,7 @@ def parse_SNP_results(blastres_f_path: pathlib.Path,
 			v.index.name = "SNP"
 			tmpdict[k] = v
 		probedf = pd.concat(tmpdict,axis=0)
-		probedf.index.names = ["Sequences", "SNP"]
+		probedf.index.names = ["Query sequence", "SNP"]
 		probedf = probedf.reset_index()
 		probedf.to_excel(probe_results_path,na_rep="X")
 	else:
@@ -273,28 +269,48 @@ def parse_SNP_results(blastres_f_path: pathlib.Path,
 		probedf.to_excel(probe_results_path,na_rep="X")
 	return probe_results_path
 
-def find_recombinants(blastdf, exe=True):
-	recombinants = []
-	orgs = np.unique(blastdf["qaccver"])
-	blastdf["Lineage"] = blastdf["saccver"]
-	blastdf["Lineage"] = blastdf["Lineage"].apply(lambda x: x.split("_")[0][0])
+def find_recombinants(blastdf: pd.DataFrame, lineageSnpDf: pd.DataFrame) -> dict:
+	"""
+	Use the cut-offs to identify putative recombinants / artifacts in the analysis
+	Gene identificatio cut-off: Atleast 1 gene with different main lineage
+	Lineage specific SNPs: 3 or more SNPs other than the dominant
+	
+	TODO: Think what will happen. If a lin_D has 2 consecutive LinB and 1 LinC
+	TODO: Write in MD all the above
+	"""
+	recombStatus = {}
+	orgs = np.unique(blastdf["Query sequence"])
 	for org in orgs:
-		tmpl = np.unique(blastdf[blastdf["qaccver"] == org]["Lineage"].values)
+		recombStatus[org] = {"geneID":0,"lSNP":0}
+		tmpl = np.unique(blastdf[blastdf["Query sequence"] == org]["Lineage"].values)
 		if len(tmpl) > 1:
-			# If more than one lineages exist it is recombinant
-			recombinants.append(org)
-	# TODO: Implement recombination status
-	# I have to use results from the lineageSnps too
-	return recombinants
+			recombStatus[org]["geneID"] = 1
+		tmpdf = lineageSnpDf[lineageSnpDf.index == org].tail(1).T.head(67) # lineageSnpDf["Index"] will become lineageSnpDf.index
+		tmplineages = dict(Counter(tmpdf[tmpdf.columns[0]].values))
+		dom_lineage = max(tmplineages,key=lambda key: tmplineages[key])
+		indeces = tmpdf.index
+		non_dom_consec = 0
+		for idx in indeces:
+			val = tmpdf.loc[idx].values[0]
+			if val == dom_lineage:
+				non_dom_consec = 0
+			if val != dom_lineage and val != "Other":
+				non_dom_consec += 1
+				if non_dom_consec >= 3: 
+					recombStatus[org]["lSNP"] = 1
+	recombinants = [org for org in recombStatus if recombStatus[org]["geneID"] != 0 and recombStatus[org]["lSNP"] != 0]
+	return recombinants, recombStatus
 
-def filter_nonHPV16(blastres_f_path, params, exe=True, filter="HPV16"):
+def filter_nonHPV16(blastres_f_path: str, params, 
+		exe=True, filter:str = "HPV16"
+) -> None:
 	"""
 	This function was created based on the minireview recommended on ICTV 2018 for the different types
 	of alphapapillomavirus 9 species
 	https://www.microbiologyresearch.org/content/journal/jgv/10.1099/jgv.0.001105
 	"""
 	# if not exe:
-	# 	geneID_results_path = blastres_f_path.with_name(blastres_f_path.stem + "_GeneID.xlsx")
+	# 	geneID_results_path = blastres_f_path.with_name(blastres_f_path.stem + "GeneIdentification_results.xlsx")
 	# 	return geneID_results_path
 	
 	# def _get_db_lengths(db_path):

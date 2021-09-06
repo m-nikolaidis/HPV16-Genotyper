@@ -7,9 +7,7 @@ from collections import Counter
 def create_annot_file(f: pathlib.Path, annot_f: pathlib.Path, 
 	prefix: str="Lin", empty: str="Other"
 	) -> None:
-	"""
-	TODO: Write me
-	"""
+
 	results = {}
 	df = pd.read_excel(f,index_col=0, engine="openpyxl")
 	lineages = list(df.columns)
@@ -43,12 +41,13 @@ def annotate_results(annot_f: pathlib.Path,probe_res: pathlib.Path,
 	xl_engine = "openpyxl"
 	annotdf = pd.read_excel(annot_f,index_col=0, engine=xl_engine)
 	probedf = pd.read_excel(probe_res,index_col=0, engine=xl_engine)
-
+	to_replace = {"Lin_ABD":"Other", "Lin_ABC":"Other", 
+		"Lin_ABD":"Other", "Lin_ACD":"Other"
+	}
 	if not exe:
 		num_snps = len(probedf.columns)
 		return num_snps
 	probedf_cp = probedf.copy()
-	# TODO: Explain what you are doing and why
 
 	ref_prefix_regex = re.compile(r'(\S+)_\d+$') # Take this based on the probedf
 	probedf_first_col = probedf.columns[0]
@@ -69,6 +68,7 @@ def annotate_results(annot_f: pathlib.Path,probe_res: pathlib.Path,
 			for probe in annotdict:
 				annotdict[probe][char] = empty
 	probedf = probedf.replace(annotdict)
+	probedf = probedf.replace(to_replace)
 	num_snps = len(probedf.columns)
 	counters = {}
 	indeces = probedf.index

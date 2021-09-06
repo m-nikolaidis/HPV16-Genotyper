@@ -77,3 +77,19 @@ requires an active internet connection to view the plotly graphs
 # The time consuming functions have on-off switch
 Blastn search and phylogentic tree construction
 Going to use them as checkpoints
+
+
+
+# Used parameters
+Check if the provided gene sequence has many Ns and filter the parent organism from the analysis
+Default N_perc=50%
+
+If more than 20 organisms are in the filtered input, then the BioNJ method will be used
+
+Also filtering the non HPV-16 genomes
+
+
+# output 
+If no output directory is specified the results are thrown into the script directory with the Fasta input
+
+filename prefix (without the extension) and the current date

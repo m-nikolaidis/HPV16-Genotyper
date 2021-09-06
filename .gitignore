@@ -76,20 +76,11 @@ cython_debug/
 src/.vscode
 
 # Custom folders and files
-Script_out_Linux
-Script_out_Win
-Script_out
-tmp_script_out
-TestOutput
 input
-src/gui/
-src/tmp
 ideas
-resources/sequences/tmp
-src/mock*
-src/sampleOut
-src/logfile.log
-src/ete3_custom
+src/Script_out/*
+src/ete3
+config_files
 
 # MS office and simple text
 *.docx

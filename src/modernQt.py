@@ -1,59 +1,53 @@
 ################################################################################
-##
-## BY: WANDERSON M.PIMENTA
-## PROJECT MADE WITH: Qt Designer and PySide2
+## Basic GUI idea and core were incepted and created by: WANDERSON M.PIMENTA
+## USING WITH: Qt Designer and PySide2
 ## V: 1.0.0
-##
-## This project can be used freely for all uses, as long as they maintain the
-## respective credits only in the Python scripts, any information in the visual
-## interface (GUI) can be modified without any implication.
+## 
+## All the PySide2 API calls were rewritten in PyQt5 library
+## Further GUI changes (in this script) and all the other modules were
+## created by NIKOLAIDIS MARIOS
 ##
 ## There are limitations on Qt licenses if you want to use your products
 ## commercially, I recommend reading them on the official website:
 ## https://doc.qt.io/qtforpython/licenses.html
-##
 ################################################################################
 
-import sys
-
-import files_rc
-########## New imports
 import os
 import re
 import sys
-# from typing import Sequence
+import blast # Tool module
 import wrapper # Tool module
 import simplot # Tool module
 import pathlib
 import logging
+import files_rc
 import pandas as pd
 import pyqtgraph as pg
 import plotly.express as px
 from datetime import date
 from Bio import SeqIO
 from QLed import QLed
-from PyQt5.QtGui import (QPixmap, 
-	QFont, QFontDatabase, QIcon, QPalette,
-	QBrush, QColor, QDesktopServices
+from PyQt5.QtGui import (
+	QPixmap, 
+	QFont, QFontDatabase, QIcon,
+	QDesktopServices
 )
-from PyQt5.QtCore import ( Qt, QObject, QThread, 
-	pyqtSignal, QUrl, QCoreApplication, QSize, QRect,
+from PyQt5.QtCore import ( 
+	Qt, QObject, QThread, pyqtSignal, 
+	QUrl, QCoreApplication, QSize,
 	QMetaObject	
 )
 from PyQt5.QtWidgets import (
-	QApplication, QLabel, QListWidgetItem, QMainWindow, QSpacerItem,
-	QWidget, QTableWidget, QTableWidgetItem, 
+	QApplication, QLabel, QListWidgetItem, 
+	QMainWindow, QSpacerItem, QWidget, 
+	QTableWidget, QTableWidgetItem, 
 	QFileDialog, QGridLayout, QVBoxLayout,
-	QPushButton, QScrollArea, QHBoxLayout, QButtonGroup,
+	QPushButton, QHBoxLayout, QButtonGroup,
 	QMessageBox, QListWidget, QSpinBox,
 	QLineEdit, QFrame, QStackedWidget, QCheckBox,
-	QAbstractScrollArea, QAbstractItemView,
 	QTextBrowser, QErrorMessage
 )
-
-# from PySide2 import QtCharts
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-
 from ete3 import ( 
 	Tree, TreeStyle, TextFace, NodeStyle
 )
@@ -80,11 +74,9 @@ class Worker(QObject):
 			self.logW.setCentralWidget(self.logW.pipelineWidget)
 		if incident == "finished":
 			self.logW.setCentralWidget(self.logW.finishedWidget)
-			
-		
+
 	def runPipeline(self):
 		paramsdf = mainW.paramsdf
-		# TODO: Uncomment after testing
 		wrapper.main(paramsdf)
 		self.finished.emit()		
 		return
@@ -110,17 +102,13 @@ class MainWindow(QMainWindow):
 		# Remove the content margins from the window
 		self.ui.horizontalLayout.setContentsMargins(0, 0, 0, 0)
 		
-		# TODO: Possible error in windows os from the initialization of the default parameters (forward slash)
 		params = wrapper._defaultparams()
+		print(params["SNP_annotation_file"])
 		self.paramsdf = pd.DataFrame.from_dict(params,orient='index')
 		self.paramsdf.rename(columns={0:"Value"},inplace=True)
-		# Init some necessary params
-		self.binaries = wrapper._init_binaries(sys.platform)
-
-
+		self.binaries = wrapper._init_binaries(sys.platform) # Init some necessary params
+		self.openWindows = {}
 		self.show()
-		# To keep the pages that are opened as extra windows
-		# self.openWindows = {}
 
 	def Button(self):
 		"""
@@ -138,7 +126,6 @@ class MainWindow(QMainWindow):
 			GuiFunctions.resetStyle(self, "resultsButton")
 			GuiFunctions.updatePageLabel(self, "Results")
 			btnWidget.setStyleSheet(GuiFunctions.selectMenu(btnWidget.styleSheet()))
-		
 		if btnWidget.objectName() == "loadFastaButton":
 			GuiFunctions.getFastaFile(self)
 		if btnWidget.objectName() == "selectOutdirButton":
@@ -161,9 +148,8 @@ class MainWindow(QMainWindow):
 		if reply == QMessageBox.Yes:
 			event.accept()
 			logging.shutdown()
-			# Also close all other windows
-			# and remove tmp directory
-			# TODO:
+			for w in mainW.openWindows:
+				mainW.openWindows[w].close()
 		else:
 			event.ignore()
 
@@ -178,7 +164,7 @@ class GuiFunctions(MainWindow):
 		font = QFont()
 		font.setFamily(u"Segoe UI")
 		button = QPushButton(str(1),self)
-		button.setObjectName(objName) # TODO: This can help me with the tabs in my original version
+		button.setObjectName(objName)
 		button.setMinimumSize(QSize(0, 70))
 		button.setLayoutDirection(Qt.LeftToRight)
 		button.setFont(font)
@@ -205,13 +191,6 @@ class GuiFunctions(MainWindow):
 		for w in self.ui.frame_left_menu.findChildren(QPushButton):
 			if w.objectName() == widget:
 				w.setStyleSheet(GuiFunctions.selectMenu(w.styleSheet()))
-
-	# TODO: Implement this
-	# def selectResultsMenu(self, widget):
-	# automatically select the results menu when created
-	# 	for w in self.ui.frame_left_menu.findChildren(QPushButton):
-	# 		if w.objectName() == widget:
-	# 			w.setStyleSheet(GuiFunctions.selectMenu(w.styleSheet()))
 	
 	# Reset selection
 	def resetStyle(self, widget):
@@ -296,14 +275,16 @@ class GuiFunctions(MainWindow):
 			self.ui.homeMenuVerticalLayout.addWidget(homeButton)
 			self.homeButtons.append(homeButton)
 
-	def showError(self,text: str):
+	def showError(self,text: str) -> None:
 		errorMsg = QErrorMessage(parent=mainW)
 		errorMsg.setWindowTitle("Error")
 		errorMsg.setWindowModality(Qt.WindowModal)
 		errorMsg.showMessage(text)
-	
+		errorMsg.setFixedSize(QSize(500,200))
+		return 
+
 	############# Home button actions
-	def getFastaFile(self):
+	def getFastaFile(self: QMainWindow) -> None:
 		# Self is mainW
 		file_filter = "Fasta file (*.fa *.fasta);;Text files (*.txt)"
 		response = QFileDialog.getOpenFileName(
@@ -316,7 +297,7 @@ class GuiFunctions(MainWindow):
 		fasta_path = pathlib.Path(response[0])
 		if fasta_path != pathlib.Path("."):
 			mainW.fasta_path = fasta_path
-			mainW.outdir = pathlib.Path.cwd() / pathlib.Path(str(fasta_path.stem) + "_" + str(date.today()).replace("-","_"))
+			mainW.outdir = pathlib.Path.cwd() / "Script_out" / pathlib.Path(str(fasta_path.stem) + "_" + str(date.today()).replace("-","_"))
 			mainW.paramsdf.loc["query"] = str(mainW.fasta_path)
 			mainW.paramsdf.loc["in"] = str(mainW.fasta_path.parent)
 			mainW.paramsdf.loc["out"] = str(mainW.outdir)
@@ -326,10 +307,8 @@ class GuiFunctions(MainWindow):
 			return 
 		else:
 			return
-		#TODO WRITE IN MD. If no output directory is specified the results are thrown into the script directory with the Fasta input
-		# filename prefix (without the extension) and the current date
 	
-	def getOutdir(self):
+	def getOutdir(self) -> None:
 		"""
 		Update the default output directory from user input
 		"""
@@ -342,8 +321,9 @@ class GuiFunctions(MainWindow):
 		else:
 			mainW.outdir = pathlib.Path(response)
 			mainW.paramsdf.loc["out"] = str(mainW.outdir)
+			return
 	
-	def loadResDir(self):
+	def loadResDir(self) -> None:
 		response = QFileDialog.getExistingDirectory(
 			parent=self,
 			caption="Select the results directory",
@@ -354,12 +334,9 @@ class GuiFunctions(MainWindow):
 			mainW.outdir = pathlib.Path(response)
 			mainW.paramsdf.loc["out"] = str(mainW.outdir)
 			logfile = mainW.outdir / pathlib.Path(".logfile.log")
-			if not logfile.exists:
-				raise Exception("Cannot load results. LOGFILE has been deleted")
-				# TODO: Make this appear in the warning window
-				# TODO: Make warning window a panel for the main page?
-			# When the results are fetched from the completed dir
-			# paramsdf needs to be initialized.  The logfile comes handy
+			if logfile.exists() == False:
+				GuiFunctions.showError(self, F"Cannot load results from specified directory.\nThe file .logfile.log has been deleted.\nPlease re-run the analysis")
+				return 
 			mainW.paramsdf = pd.DataFrame(index=[],columns=["Value"])
 			fin = open(logfile,"r")
 			for line in fin.readlines():
@@ -372,11 +349,16 @@ class GuiFunctions(MainWindow):
 			mainW.fasta_path = mainW.paramsdf.loc["query","Value"]
 			mainW.totalSequenceRecDict = SeqIO.index(str(mainW.fasta_path),"fasta")
 			mainW.analyzedSeqs = list(mainW.totalSequenceRecDict.keys())
-			GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-user-follow.png)", True)
+			GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)
 			GuiFunctions.initVariables(self)
-	
-	def execPipeline(self, exe=True):
+			GuiFunctions.selectStandardMenu(self,"resultsButton")
+			mainW.ui.stackedWidget.setCurrentWidget(mainW.ui.resultsPage)
+			mainW.showMaximized()
+			return
+
+	def execPipeline(self) -> None:
 		"""
+		Self is GuiFunctions, child of MainWindow class
 		By default the whole pipeline will be executed. It will create another thread to run, so the application doesn't freeze
 		Step 1: Create the worker class that will execute all the necessary functions
 		Step 2: Create the QThread
@@ -384,10 +366,8 @@ class GuiFunctions(MainWindow):
 		Step 4: Move the worker to the QThread
 		Step 5: Connect the various signals from and to the worker
 		Step 6: Start the thread
-		Step 7: Clear the central widget and print the final results
-		If the results are just needed to be loaded, the pipeline won't be executed but the function will be used to visualize the results 
+		Step 7: Clear the central widget and load the results
 		"""
-		# TODO: If i use a dictionary for the various panels (widgets) could i display each one i want each time without destroying the previous
 		self.thread = QThread() # Step 2
 		self.worker = Worker() # Step 3
 		self.worker.moveToThread(self.thread) # Step 4
@@ -400,18 +380,26 @@ class GuiFunctions(MainWindow):
 		self.worker.updateWidgets("starting")
 		self.thread.finished.connect(lambda: self.worker.updateWidgets("finished")) # Step 7
 		self.thread.finished.connect(lambda: GuiFunctions.initVariables(self))
-		self.thread.finished.connect(lambda: GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-user-follow.png)", True)) # Step 7
+		self.thread.finished.connect(lambda: GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)) # Step 7
+		self.thread.finished.connect(lambda: GuiFunctions.selectStandardMenu(self, "resultsButton"))
+		self.thread.finished.connect(lambda: mainW.ui.stackedWidget.setCurrentWidget(mainW.ui.resultsPage))
+		self.thread.finished.connect(lambda: mainW.showMaximized())
+	
+	# TODO. need to find a way to reset the style
+	# There is an error when the results windwo appears. The home page style is not reset
+	# if btnWidget.objectName() == "homeButton":
+	# 		self.ui.stackedWidget.setCurrentWidget(self.ui.homePage)
+	# 		GuiFunctions.resetStyle(self, "homeButton")
+	# 		btnWidget.setStyleSheet(GuiFunctions.selectMenu(btnWidget.styleSheet()))
 
 	##### Results page functions
-	
-	def initVariables(self: QMainWindow):
+	def initVariables(self: QMainWindow) -> None:
 		# self is mainW
 		self.dfBlast = pd.read_excel(self.outdir / "GeneIdentification_results.xlsx", engine="openpyxl")
-		# TODO: Need to drop certain columns in the output
-
 		self.dfLineageSnp = pd.read_excel(self.outdir / "LineageSpecificSNPs.xlsx", engine="openpyxl", index_col=0)
+		self.putRecSeqs, self.recombinationStatus = blast.find_recombinants(self.dfBlast, self.dfLineageSnp)
 		self.dfCancerSnp = pd.read_excel(self.outdir / "cancerSNP_results.xlsx", engine="openpyxl")
-		self.recgID_for_graphdf = pd.read_excel(self.outdir / "GeneIdentification_results.xlsx", engine="openpyxl", index_col=0)
+		self.dfGeneIdentification = pd.read_excel(self.outdir / "GeneIdentification_results.xlsx", engine="openpyxl", index_col=0)
 		self.muscle_bin= self.binaries[2]
 		self.simplotDBFasta = self.paramsdf.loc["SimplotRef_database","Value"]
 		self.geneIDColorDict = {
@@ -428,18 +416,9 @@ class GuiFunctions(MainWindow):
 		"Lin_BCD":"#ebeb34",
 		"Other":"#ffffff"
 		}
-		# Hard coded for testing TODO: Fix after testing
-		self.putRecSeqs = ["MG850175.1","MG850176.1"] 
-		self.recombinationStatus = {
-			"MG850175.1":{"Genes":1,"SNP":0},
-			"MG850176.1":{"Genes":1,"SNP":1},
-		}
-		# end Hard coded for testing TODO: Fix after testing
-		
 		self.trees_dir = self.outdir/"Phylogenetic_Trees"
 		trees = os.listdir(self.trees_dir)
 		trees = [pathlib.Path(self.trees_dir) / t for t in trees]
-		
 		self.genes = ["E6", "E7", "E1", "E2", "E4", "E5", "L2", "L1"]
 		self.gene_name_regex = re.compile(r"^\S+_(\S+)_aln.+$")
 		self.trees_l = trees
@@ -449,7 +428,7 @@ class GuiFunctions(MainWindow):
 			gene = m.group(1)
 			self.trees[gene] = Tree(str(t))
 		mainW.ui.translateResultsUI(self)
-
+		return
 
 	def updateListWidget(self) -> None:
 		"""
@@ -460,15 +439,16 @@ class GuiFunctions(MainWindow):
 		mainW.ui.listWidget.clear()
 		if status:
 			mainW.ui.listWidget.addItems(mainW.putRecSeqs)
-			# TODO: Need to init this on the first load
 		else:
 			mainW.ui.listWidget.addItems(mainW.analyzedSeqs)
+		return
 
-	def filterList(self): # Working TODO:Remove comment
+	def filterList(self) -> None:
 		for i in range(mainW.ui.listWidget.count()):
 			item = mainW.ui.listWidget.item(i)
 			item.setHidden(self not in item.text())
-	
+		return 
+
 	def updateResultsTables(self) -> None:
 		"""
 		Update the tables depending on their object name
@@ -482,35 +462,30 @@ class GuiFunctions(MainWindow):
 			tableName = table.objectName()
 			if tableName == "blastResTable":
 				if mainW.dfBlast.size == 0: return
-				tmpdf = mainW.dfBlast[mainW.dfBlast["qaccver"] == mainW.selectedSeq]
-				tmpdf = tmpdf[["Database","Gene","Lineage","sstart","send","Sequences","qstart","qend","length","pident","evalue"]]
-				tmpdf["evalue"] = tmpdf["evalue"].apply(lambda x: F"{x:.2e}")
-				tmpdf.rename({
-					"sstart":"Subject start",
-					"send":"Subject end",
-					"qstart":"Query start",
-					"qend":"Query end",
-					"length":"Aln length",
-					"pident":"Perc. Identity",
-					"evalue":"E-value"
-				},axis=1, inplace=True)
+				tmpdf = mainW.dfBlast[mainW.dfBlast["Query sequence"] == mainW.selectedSeq]
+				tmpdf = tmpdf.drop("Query sequence",axis = 1)
+				tmpdf["E-value"] = tmpdf["E-value"].apply(lambda x: F"{x:.2e}")
+				tmpdf.sort_values("Query start", inplace = True)
 			if tableName == "lineageSnpTable":
 				if mainW.dfLineageSnp.size == 0: return
-				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq].tail(1)
-				print(tmpdf)
+				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq].tail(1).T.head(67) # 67 == num_snps
+				tmpdf["Lineage specific SNP"] = tmpdf.index
+				tmpdf.rename({tmpdf.columns[0]:"Lineage"}, inplace = True, axis = 1)
+				tmpdf = tmpdf[["Lineage specific SNP","Lineage"]]
 			if tableName == "lineageSumsTable":
-				tmpdf = tmpdf.T.tail(8) # This tmpdf should be the lineageSnpTable one
+				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq].tail(1).T
+				numRows = tmpdf.shape[0] - 67 # Num snps
+				tmpdf = tmpdf.tail(numRows)
 				tmpdf["Lineage"] = tmpdf.index
 				tmpdf.index = range(len(tmpdf))
 				tmpdf.rename({tmpdf.columns[0]:"Proportion"}, inplace=True, axis=1)
 				tmpdf = tmpdf[["Lineage","Proportion"]]
 			if tableName == "cancerSnpTable":
 				if mainW.dfCancerSnp.size == 0: return
-				tmpdf = mainW.dfCancerSnp[mainW.dfCancerSnp["Sequences"] == mainW.selectedSeq]
+				tmpdf = mainW.dfCancerSnp[mainW.dfCancerSnp["Query sequence"] == mainW.selectedSeq]
 				tmpdf.sort_values(by=["Query position"],inplace=True,ignore_index=True)
 				tmpdf.drop("Unnamed: 0",axis=1, inplace=True)
-				tmpdf = tmpdf[["SNP","Sequences","Query nucleotide", "Query position", "E-value"]]
-			
+				tmpdf = tmpdf[["SNP","Query nucleotide", "Query position", "E-value"]]
 			if tableName == "lineageSumsTable":
 				tmp = tmpdf["Proportion"].values
 				zeroes = 0
@@ -538,48 +513,41 @@ class GuiFunctions(MainWindow):
 				table.horizontalHeader().setDefaultSectionSize(int(1100 / tmpdf.shape[1]))
 			if tableName == "lineageSumsTable":
 				table.horizontalHeader().setDefaultSectionSize(120)
-				
-	def displayGraphs(self: QListWidgetItem):
+		return
+
+	def displayGraphs(self: QListWidgetItem) -> None:
 		mainW.ui.graphicsList = []
 		browsers = [mainW.ui.geneIDBrowser, mainW.ui.snpBrowser]
 		for browser in browsers:
 			browserName = browser.objectName()
 			if browserName == "geneIDBrowser":
-				tmpdf = mainW.recgID_for_graphdf[mainW.recgID_for_graphdf["Sequences"] == mainW.selectedSeq]
-				tmpdf = tmpdf.sort_values("qstart")
-				fig = px.scatter(tmpdf, x="Gene", y="Sequences", size="pident", color="Lineage",text="Database",
-				hover_data=["Database","qstart","qend","pident"], 
+				tmpdf = mainW.dfGeneIdentification[mainW.dfGeneIdentification.index == mainW.selectedSeq]
+				tmpdf = tmpdf.sort_values("Query start")
+				tmpdf["Sublineage"] = tmpdf["Subject sequence"].apply(lambda x: x.split("_")[0])
+				fig = px.scatter(tmpdf, x="Gene", y=tmpdf.index, size="Perc. identity", color="Lineage",text="Sublineage",
+				hover_data=["Sublineage","Query start","Query end","Perc. identity"], 
 				color_discrete_map = mainW.geneIDColorDict
 				)
 				fig.update_layout(height=200, legend_y=1.5)
 			if browserName == "lineageSnpBrowser":
+				# TODO: Write in MD
+				# This graph is showing the A,B,C,D specfic SNPs and the BCD specific
+				# So we can divide the A from the non-A
 				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq]
 				tmpdf = tmpdf.T.head(67) # num of lineage specific snps
-				to_replace = {"Lin_ABD":"Other", "Lin_ABC":"Other", 
-				"Lin_ABD":"Other", "Lin_ACD":"Other"
-				}
-				# TODO: Is the replace method good for the output?
-				# Or is it wrong?
-				# Ask amoutzias
-				tmpdf.replace(to_replace,inplace=True)
 				tmpdf.columns=["Nucleotide","Lineage"]
 				tmpdf["SNP reference pos"] = tmpdf.index
 				tmpdf["SNP reference pos"] = tmpdf["SNP reference pos"].apply(lambda x: int(x.split("_")[2]) )
 				tmpdf.index = range(len(tmpdf))
-				tmpdf["Sequence"] = mainW.selectedSeq
-				fig = px.scatter(tmpdf, x="SNP reference pos", y="Sequence", color="Lineage",
+				tmpdf["Query sequence"] = mainW.selectedSeq
+				fig = px.scatter(tmpdf, x="SNP reference pos", y="Query sequence", color="Lineage",
 				hover_data=["SNP reference pos","Lineage","Nucleotide"], 
 				color_discrete_map=mainW.lineageSpecificSnpColorDict
 				)
 				fig.update_layout(xaxis_type = 'linear', height=200, legend_y=1.5)
 			mainW.ui.graphicsList.append(fig)
 			browser.setHtml(fig.to_html(include_plotlyjs='cdn'))
-
-	# Clean tmp directory after quiting
-	# and recreate so i can use it for simplot
-	# also save the html graphics in the corresponding directory
-	# and remove if the user does not press save graphics
-	# TODO: Implement those above
+		return
 
 	def displayCancerSnpInfo(self: QTableWidgetItem) -> None:
 		cSnp = mainW.ui.cancerSnpTable.item(self.row(),0).text()
@@ -587,14 +555,17 @@ class GuiFunctions(MainWindow):
 		cSnp = m.group(1) + ".md"
 		fin = pathlib.Path(__file__).parent / pathlib.Path("resources") / pathlib.Path("cSNPinfo") / cSnp 
 		mainW.ui.cancerSnpTextBrowser.setSource(QUrl(str(fin)))
-	
+		mainW.ui.cancerSnpTextBrowser.setAlignment(Qt.AlignJustify)
+		return 
+
 	def openPubmedUrl(self: QUrl) -> None:
 		if "#citations" in self.toString():
 			return
 		else:
 			QDesktopServices.openUrl(self)
+		return 
 
-	def eteInteractive(self):
+	def eteInteractive(self) -> None:
 		buttonId = mainW.ui.TreesRenderButtonGroup.button(self).text()
 		t = mainW.trees[buttonId]
 		t.ladderize(direction=1)
@@ -620,13 +591,13 @@ class GuiFunctions(MainWindow):
 		for leaf in t.iter_leaves():
 			if leaf.name == mainW.selectedSeq:
 				leaf.img_style=selectedSeqstyle
-			if re.match(r"^A\d+_E\d",leaf.name):
+			if re.match(r"^A\d+_\S\d",leaf.name):
 				leaf.img_style=linAStyle			
-			if re.match(r"^B\d+_E\d",leaf.name):
+			if re.match(r"^B\d+_\S\d",leaf.name):
 				leaf.img_style=linBStyle			
-			if re.match(r"^C\d+_E\d",leaf.name):
+			if re.match(r"^C\d+_\S\d",leaf.name):
 				leaf.img_style=linCStyle			
-			if re.match(r"^D\d+_E\d",leaf.name):
+			if re.match(r"^D\d+_\S\d",leaf.name):
 				leaf.img_style=linDStyle
 		ts.show_branch_support = True
 		t.ladderize(direction=1)
@@ -636,15 +607,15 @@ class GuiFunctions(MainWindow):
 
 	def updateLed(self) -> None:
 		if mainW.selectedSeq in mainW.recombinationStatus:
-			mainW.ui._blastLED.setValue(mainW.recombinationStatus[mainW.selectedSeq]["Genes"])
-			mainW.ui._lineageSnpLED.setValue(mainW.recombinationStatus[mainW.selectedSeq]["SNP"])
+			mainW.ui._blastLED.setValue(mainW.recombinationStatus[mainW.selectedSeq]["geneID"])
+			mainW.ui._lineageSnpLED.setValue(mainW.recombinationStatus[mainW.selectedSeq]["lSNP"])
 		else:
 			mainW.ui._blastLED.setValue(0)
 			mainW.ui._lineageSnpLED.setValue(0)
 		return
 
-	def createSimplot(self):
-		mainW.tmpOut = mainW.outdir / "tmp_dir"
+	def createSimplot(self) -> None:
+		mainW.tmpOut = mainW.outdir / ".tmp"
 		mainW.aln_f = simplot.align(
 			mainW.muscle_bin, mainW.simplotDBFasta, 
 			mainW.totalSequenceRecDict, mainW.selectedSeq, 
@@ -657,8 +628,9 @@ class GuiFunctions(MainWindow):
 			mainW.step, mainW.aln_f
 		)
 		mainW.simplotW.show()
+		return 
 
-	def saveGraphics(self):
+	def saveGraphics(self) -> None:
 		for i in range(len(mainW.ui.graphicsList)):
 			fig = mainW.ui.graphicsList[i]
 			name = pathlib.Path(mainW.outdir) / pathlib.Path("Graphics")
@@ -668,6 +640,7 @@ class GuiFunctions(MainWindow):
 				name = name / pathlib.Path("LineageSpecificSNPs")
 			name = name / (mainW.selectedSeq + ".html")
 			fig.write_html(str(name),include_plotlyjs='cdn')
+		return
 
 class LogWindow(QMainWindow):
 	def __init__(self, parent=None):
@@ -690,7 +663,7 @@ class LogWindow(QMainWindow):
 
 		self.finishedWidget = QLabel("Finished! \n Please don't delete the logfile\n You can safely close this window")
 		self.finishedWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-
+		mainW.openWindows["log"] = self
 		self.show()
 
 class Simplot_page(QMainWindow):
@@ -759,13 +732,7 @@ class Simplot_page(QMainWindow):
 		self.legend.addItem(self.c2, name="Lineage B")
 		self.legend.addItem(self.c3, name="Lineage C")
 		self.legend.addItem(self.c4, name="Lineage D")
-
-		# Configure the mouse functions of the plot
-		# self.c1.sigClicked.connect(self.plotClicked)
-		# TODO: Figure out what i need to do
-		# Can leave this for now on
-		# /Configure the mouse functions of the plot
-
+		
 		# Modify plot
 		self.title = ("<span style=\"color:black;font-size:11pt;background-color:#cffaf9\">Sequence: %s Sequence size: %s Alignment size: %s Window: %s Step: %s</span>"
 		%(self.qseq,self.qseqSize,self.alnSize,self.wsize,self.step)
@@ -787,8 +754,9 @@ class Simplot_page(QMainWindow):
 		self.setCentralWidget(self.centralWidget)
 
 		self.saveButton.clicked.connect(self.screenCapture)
+		mainW.openWindows["simplot"] = self
 
-	def screenCapture(self):
+	def screenCapture(self) -> None:
 		self.screenshot = screen.grabWindow( self.winId())
 		file_filter = "Images (*.jpg)"
 		self.response = QFileDialog.getSaveFileName(
@@ -803,6 +771,7 @@ class Simplot_page(QMainWindow):
 			self.screenshot.save(self.file_path, 'jpg')
 		else:
 			return
+		return 
 
 	def closeEvent(self,event):
 		event.accept()
@@ -934,12 +903,11 @@ class Ui_MainWindow(QMainWindow):
 		# Results page
 		self.resultsPage = QWidget()
 		self.resultsPage.setObjectName("resultsPage")
-		self.putativeRecombinants = QCheckBox() # Will use this to "transorm" the page into a putative recombinants only
-		# TODO: Implement this change when checked (just clear() and add putative recs in listWidget, and clear() the rest of the widgets)
+		self.putativeRecombinants = QCheckBox() # Will use this to "transform" the list into a putative recombinants only
 
-		self.resultsPageVerticalLayoutForFrames = QVBoxLayout() 
 		# This will be used to put all the frames
 		self.resultsPageGridLayoutForFrames = QGridLayout(self.resultsPage)
+		
 		########## QLine and list list frame
 		self.listFrame = QFrame(self.resultsPage)
 		self.listFrame.setObjectName("listFrame")
@@ -1013,7 +981,7 @@ class Ui_MainWindow(QMainWindow):
 		#3. Check box
 		self.recSeqsCheckBox = QCheckBox(self.listFrame)
 		self.recSeqsCheckBox.setStyleSheet(Style.style_checkbox)
-		self.recSeqsCheckBox.setText("Show\nputative recombinants\nonly") # TODO: set the word position to center
+		self.recSeqsCheckBox.setText("Show\nputative recombinants\nonly")
 		self.recSeqsCheckBox.stateChanged.connect(GuiFunctions.updateListWidget)
 
 		self.horizontalLayout_9.addLayout(self.gridLayout)
@@ -1059,13 +1027,13 @@ class Ui_MainWindow(QMainWindow):
 		self.geneIDBrowser.setObjectName("geneIDBrowser")
 
 		self.blastResGridLayout.addWidget(self.blastLabel, 0, 0, 1, 1)
-		self.blastResGridLayout.addWidget(self._blastLED, 0, 1, 1, 1)
 		self.blastResGridLayout.addWidget(self.blastResTable, 1, 0, 3, 5)
 		self.blastResGridLayout.addWidget(self.geneIDBrowser, 0, 5, -1, 3)
+		self.blastResGridLayout.addWidget(self._blastLED, 0, 5, Qt.AlignLeft)
 
 		self.blastResVerticalLayout.addLayout(self.blastResGridLayout)
-		# self.resultsPageVerticalLayoutForFrames.addWidget(self.blastResFrame)
 		self.resultsPageGridLayoutForFrames.addWidget(self.blastResFrame,1,0,2,-1)
+
 		############# Lineage Specific SNPs Frame
 		self.lineageSnpFrame = QFrame(self.resultsPage)
 		self.lineageSnpFrame.setMinimumSize(QSize(0, 150))
@@ -1087,8 +1055,9 @@ class Ui_MainWindow(QMainWindow):
 		self.lineageSnpTable = QTableWidget(self.lineageSnpFrame)
 		self.lineageSnpTable.setObjectName("lineageSnpTable")
 		# Set Rows and Columns to a first value so i can init the view
-		self.lineageSnpTable.setColumnCount(10)
-		self.lineageSnpTable.setRowCount(1)
+		self.lineageSnpTable.setColumnCount(2)
+		self.lineageSnpTable.setRowCount(4)
+		self.lineageSnpTable.setMaximumWidth(285)
 		self.lineageSnpTable.setStyleSheet(Style.style_table_standard)
 		# 3. LED
 		self._lineageSnpLED=QLed(self, onColour=QLed.Green,offColour=QLed.Red, shape=QLed.Circle)
@@ -1096,8 +1065,9 @@ class Ui_MainWindow(QMainWindow):
 		# 4. Dominant lineage table
 		self.lineageSumsTable = QTableWidget(self.lineageSnpFrame)
 		self.lineageSumsTable.setObjectName("lineageSumsTable")
-		self.lineageSumsTable.setColumnCount(4)
-		self.lineageSumsTable.setRowCount(1)
+		self.lineageSumsTable.setColumnCount(2)
+		self.lineageSumsTable.setRowCount(4)
+		self.lineageSumsTable.setMaximumWidth(270)
 		self.lineageSumsTable.setStyleSheet(Style.style_table_standard)
 		# 5. Dominant lineage label
 		self.lineageSumsLabel = QLabel(self.lineageSnpFrame)
@@ -1106,12 +1076,13 @@ class Ui_MainWindow(QMainWindow):
 		# 6. Webengine view
 		self.snpBrowser = QWebEngineView()
 		self.snpBrowser.setObjectName("lineageSnpBrowser")
-		self.lineageSnpGridLayout.addWidget(self.lineageSnpLabel, 0, 0, 1, 1)
-		self.lineageSnpGridLayout.addWidget(self._lineageSnpLED, 0, 1, 1, 1)
-		self.lineageSnpGridLayout.addWidget(self.lineageSnpTable, 1, 0, 1, 3)
-		self.lineageSnpGridLayout.addWidget(self.lineageSumsLabel, 0, 3, 1, 1)
-		self.lineageSnpGridLayout.addWidget(self.lineageSumsTable, 1, 3, -1, 2)
-		self.lineageSnpGridLayout.addWidget(self.snpBrowser, 0, 5, -1, 3)
+
+		self.lineageSnpGridLayout.addWidget(self.lineageSnpLabel, 0, 0)
+		self.lineageSnpGridLayout.addWidget(self.lineageSnpTable, 1, 0, 1, 1)
+		self.lineageSnpGridLayout.addWidget(self.lineageSumsLabel, 0, 1, 1, 1)
+		self.lineageSnpGridLayout.addWidget(self.lineageSumsTable, 1, 1, 1, 1)
+		self.lineageSnpGridLayout.addWidget(self.snpBrowser, 0, 2,-1, 6)
+		self.lineageSnpGridLayout.addWidget(self._lineageSnpLED, 0, 2, Qt.AlignLeft)
 
 		self.lineageSnpVerticalLayout.addLayout(self.lineageSnpGridLayout)
 		self.resultsPageGridLayoutForFrames.addWidget(self.lineageSnpFrame,3,0,2,-1)
@@ -1124,7 +1095,6 @@ class Ui_MainWindow(QMainWindow):
 		self.cancerSnpFrame.setFrameShadow(QFrame.Raised)
 
 		self.cancerSnpVerticalLayout = QVBoxLayout(self.cancerSnpFrame)
-		
 		self.cancerSnpGridLayout = QGridLayout()
 		
 		# Widgets
@@ -1178,8 +1148,6 @@ class Ui_MainWindow(QMainWindow):
 		self.TreesRenderButtonGroup.buttonClicked[int].connect(GuiFunctions.eteInteractive)
 		row = 1
 		col = 0
-		# TODO: mainW is not defined. can't use mainW variables
-		# I am in child of mainW
 		self.genes = ["E6", "E7", "E1", "E2", "E4", "E5", "L2", "L1"]
 		self.treeGridLayout.addWidget(self.treeLabel, 0, 0,1,2)
 		for gene in self.genes:
@@ -1194,18 +1162,15 @@ class Ui_MainWindow(QMainWindow):
 				col = 0
 		self.resultsPageGridLayoutForFrames.addWidget(self.treeFrame,7,0,1,4)
 
-		"""
-		Implement to add colors in the interactive trees:
-		Each lineage will be colored according to our schema for easier inspection
-		The selected sequences will be colored a bright color that the user can change from the ETE interactive window
-		"""
 		############# Simplot Frame
 		self.SimplotFrame = QFrame(self.resultsPage)
 		self.SimplotFrame.setMinimumSize(QSize(0, 150))
-		self.SimplotFrame.setStyleSheet("""
-				background-color: rgb(39, 44, 54);
-				border-radius: 5px;
-		""")
+		self.SimplotFrame.setStyleSheet(
+			"""
+			background-color: rgb(39, 44, 54);
+			border-radius: 5px;
+			"""
+		)
 		self.SimplotFrame.setFrameShape(QFrame.StyledPanel)
 		self.SimplotFrame.setFrameShadow(QFrame.Raised)
 
@@ -1218,8 +1183,8 @@ class Ui_MainWindow(QMainWindow):
 		self.SimplotLabel = QLabel(self.SimplotFrame)
 		self.SimplotLabel.setFont(font4)
 		self.SimplotLabel.setText(" Create similarity plot ")
+		
 		# Simplot Widget
-
 		self.simplotButtonAreaWidget = QWidget()
 		self.simplotButtonAreaWidget.setMaximumSize(250,200)
 		self.simplotButtonAreaWidgetSimplotLabel = QLabel("Similarity plot parameters")
@@ -1274,7 +1239,8 @@ class Ui_MainWindow(QMainWindow):
 			"}"
 		)
 		icon = QIcon()
-		icon.addFile(":/16x16/icons/16x16/cil-save.png", QSize(), QIcon.Normal, QIcon.Off)
+		icon.addFile("url(:/16x16/icons/16x16/cil-magnifying-glass.png)", QSize(), QIcon.Normal, QIcon.Off)
+		# TODO: Fix, not working
 		self.saveGraphicsFrameButton.setIcon(icon)
 		self.saveGraphicsFrameButton.setText("Save graphics")
 		self.saveGraphicsFrameButton.clicked.connect(GuiFunctions.saveGraphics)
@@ -1301,15 +1267,6 @@ class Ui_MainWindow(QMainWindow):
 
 	def translateResultsUI(self,mainWindow):
 		self.listWidget.addItems(mainW.analyzedSeqs)
-
-#       # TODO: Keeping them to use later
-		# self.pushButton.setText(QCoreApplication.translate("MainWindow", u"Load results", None)) # Button text
-		# Hover text to button
-		# self.btn_close.setToolTip(QCoreApplication.translate("MainWindow", u"Close", None))
-		# self.btn_close.setText("") # Button text
-
-
-
 
 class Style():
 	"""
@@ -1495,8 +1452,6 @@ class Style():
 			border-radius: 5px;
 			background-color: rgb(52, 59, 72);
 		}
-
-
 		"""
 	)
 	style_list_widget = (
@@ -1541,6 +1496,9 @@ class Style():
 	)
 	style_checkbox = (
 		"""
+		QCheckBox {
+			text-align: center;
+		}
 		QCheckBox::indicator {\n"
 			border: 3px solid rgb(52, 59, 72);\n"
 			width: 15px;\n"
@@ -1587,5 +1545,3 @@ if __name__ == "__main__":
 	QFontDatabase.addApplicationFont('fonts/segoeuib.ttf')
 	screen = app.primaryScreen()
 	sys.exit(app.exec_())
-
-# TODO: Add all stylesheets into the Style fuction and call them from there

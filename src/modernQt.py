@@ -77,7 +77,8 @@ class Worker(QObject):
 
 	def runPipeline(self):
 		paramsdf = mainW.paramsdf
-		wrapper.main(paramsdf)
+		query_f_path =	wrapper.main(paramsdf)
+		mainW.paramsdf.loc["query"] = query_f_path
 		self.finished.emit()		
 		return
 
@@ -103,7 +104,6 @@ class MainWindow(QMainWindow):
 		self.ui.horizontalLayout.setContentsMargins(0, 0, 0, 0)
 		
 		params = wrapper._defaultparams()
-		print(params["SNP_annotation_file"])
 		self.paramsdf = pd.DataFrame.from_dict(params,orient='index')
 		self.paramsdf.rename(columns={0:"Value"},inplace=True)
 		self.binaries = wrapper._init_binaries(sys.platform) # Init some necessary params
@@ -301,8 +301,6 @@ class GuiFunctions(MainWindow):
 			mainW.paramsdf.loc["query"] = str(mainW.fasta_path)
 			mainW.paramsdf.loc["in"] = str(mainW.fasta_path.parent)
 			mainW.paramsdf.loc["out"] = str(mainW.outdir)
-			mainW.totalSequenceRecDict = SeqIO.index(str(mainW.fasta_path),"fasta")
-			mainW.analyzedSeqs = list(mainW.totalSequenceRecDict.keys())
 			GuiFunctions.enablePipeline(self)
 			return 
 		else:
@@ -400,6 +398,9 @@ class GuiFunctions(MainWindow):
 		self.putRecSeqs, self.recombinationStatus = blast.find_recombinants(self.dfBlast, self.dfLineageSnp)
 		self.dfCancerSnp = pd.read_excel(self.outdir / "cancerSNP_results.xlsx", engine="openpyxl")
 		self.dfGeneIdentification = pd.read_excel(self.outdir / "GeneIdentification_results.xlsx", engine="openpyxl", index_col=0)
+		self.fasta_path = self.paramsdf.loc["query", "Value"]
+		self.totalSequenceRecDict = SeqIO.index(str(self.fasta_path), "fasta")
+		self.analyzedSeqs = list(self.totalSequenceRecDict.keys())
 		self.muscle_bin= self.binaries[2]
 		self.simplotDBFasta = self.paramsdf.loc["SimplotRef_database","Value"]
 		self.geneIDColorDict = {
@@ -428,6 +429,8 @@ class GuiFunctions(MainWindow):
 			gene = m.group(1)
 			self.trees[gene] = Tree(str(t))
 		mainW.ui.translateResultsUI(self)
+
+		# TODO: List widget has wrong analyzed Seqs
 		return
 
 	def updateListWidget(self) -> None:
@@ -464,7 +467,6 @@ class GuiFunctions(MainWindow):
 				if mainW.dfBlast.size == 0: return
 				tmpdf = mainW.dfBlast[mainW.dfBlast["Query sequence"] == mainW.selectedSeq]
 				tmpdf = tmpdf.drop("Query sequence",axis = 1)
-				tmpdf["E-value"] = tmpdf["E-value"].apply(lambda x: F"{x:.2e}")
 				tmpdf.sort_values("Query start", inplace = True)
 			if tableName == "lineageSnpTable":
 				if mainW.dfLineageSnp.size == 0: return
@@ -529,10 +531,8 @@ class GuiFunctions(MainWindow):
 				color_discrete_map = mainW.geneIDColorDict
 				)
 				fig.update_layout(height=200, legend_y=1.5)
+				# fig.layout.modebar(remove=["lasso2d", "lasso", ])
 			if browserName == "lineageSnpBrowser":
-				# TODO: Write in MD
-				# This graph is showing the A,B,C,D specfic SNPs and the BCD specific
-				# So we can divide the A from the non-A
 				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq]
 				tmpdf = tmpdf.T.head(67) # num of lineage specific snps
 				tmpdf.columns=["Nucleotide","Lineage"]
@@ -600,10 +600,9 @@ class GuiFunctions(MainWindow):
 			if re.match(r"^D\d+_\S\d",leaf.name):
 				leaf.img_style=linDStyle
 		ts.show_branch_support = True
-		t.ladderize(direction=1)
-		t.show(tree_style=ts)
+		t.ladderize(direction = 1)
+		t.show(tree_style = ts, child_app = True)
 		return
-		# TODO: QCoreApplication error fix
 
 	def updateLed(self) -> None:
 		if mainW.selectedSeq in mainW.recombinationStatus:
@@ -987,7 +986,6 @@ class Ui_MainWindow(QMainWindow):
 		self.horizontalLayout_9.addLayout(self.gridLayout)
 		self.verticalLayout_7.addWidget(self.frame_content_wid_1)
 		self.verticalLayout_15.addWidget(self.frame_div_content_1)
-		self.resultsPageGridLayoutForFrames.addWidget(self.listFrame,0,0,1,-1)
 
 		self.gridLayout.addWidget(self.listFrameLabel, 0, 0, 1, 1)
 		self.gridLayout.addWidget(self.lineEdit, 1, 0, 1, 1)
@@ -1019,6 +1017,7 @@ class Ui_MainWindow(QMainWindow):
 		self.blastResTable.setColumnCount(10)
 		self.blastResTable.setRowCount(10)
 		self.blastResTable.setStyleSheet(Style.style_table_standard)
+		self.blastResTable.horizontalHeader().setDefaultSectionSize(150)
 		# 3. LED
 		self._blastLED=QLed(self, onColour=QLed.Green,offColour=QLed.Red, shape=QLed.Circle)
 		self._blastLED.setFixedSize(18,18)
@@ -1032,7 +1031,6 @@ class Ui_MainWindow(QMainWindow):
 		self.blastResGridLayout.addWidget(self._blastLED, 0, 5, Qt.AlignLeft)
 
 		self.blastResVerticalLayout.addLayout(self.blastResGridLayout)
-		self.resultsPageGridLayoutForFrames.addWidget(self.blastResFrame,1,0,2,-1)
 
 		############# Lineage Specific SNPs Frame
 		self.lineageSnpFrame = QFrame(self.resultsPage)
@@ -1085,7 +1083,6 @@ class Ui_MainWindow(QMainWindow):
 		self.lineageSnpGridLayout.addWidget(self._lineageSnpLED, 0, 2, Qt.AlignLeft)
 
 		self.lineageSnpVerticalLayout.addLayout(self.lineageSnpGridLayout)
-		self.resultsPageGridLayoutForFrames.addWidget(self.lineageSnpFrame,3,0,2,-1)
 		
 		############# Cancer SNPs Frame
 		self.cancerSnpFrame = QFrame(self.resultsPage)
@@ -1129,7 +1126,6 @@ class Ui_MainWindow(QMainWindow):
 		self.cancerSnpTable.verticalHeader().setStretchLastSection(True)
 
 		self.cancerSnpVerticalLayout.addLayout(self.cancerSnpGridLayout)
-		self.resultsPageGridLayoutForFrames.addWidget(self.cancerSnpFrame,5,0,2,-1)
 		
 		############# Trees Frame
 		self.treeFrame = QFrame(self.resultsPage)
@@ -1160,7 +1156,6 @@ class Ui_MainWindow(QMainWindow):
 			if col == 4:
 				row += 1
 				col = 0
-		self.resultsPageGridLayoutForFrames.addWidget(self.treeFrame,7,0,1,4)
 
 		############# Simplot Frame
 		self.SimplotFrame = QFrame(self.resultsPage)
@@ -1210,7 +1205,6 @@ class Ui_MainWindow(QMainWindow):
 		self.SimplotGridLayout.addWidget(self.simplotButtonAreaWidget, 1, 0, 3, 5)
 
 		self.SimplotVerticalLayout.addLayout(self.SimplotGridLayout)
-		self.resultsPageGridLayoutForFrames.addWidget(self.SimplotFrame,7,4,1,1)
 		
 		# Save graphics frame
 		self.saveGraphicsFrame = QFrame(self.resultsPage)
@@ -1240,12 +1234,20 @@ class Ui_MainWindow(QMainWindow):
 		)
 		icon = QIcon()
 		icon.addFile("url(:/16x16/icons/16x16/cil-magnifying-glass.png)", QSize(), QIcon.Normal, QIcon.Off)
-		# TODO: Fix, not working
 		self.saveGraphicsFrameButton.setIcon(icon)
 		self.saveGraphicsFrameButton.setText("Save graphics")
 		self.saveGraphicsFrameButton.clicked.connect(GuiFunctions.saveGraphics)
 		self.saveGraphicsVBoxLayout.addWidget(self.saveGraphicsFrameButton)
+		
+		# Add frames
+		self.resultsPageGridLayoutForFrames.addWidget(self.listFrame,0,0,1,-1)
+		self.resultsPageGridLayoutForFrames.addWidget(self.cancerSnpFrame,1,0,2,-1)
+		self.resultsPageGridLayoutForFrames.addWidget(self.lineageSnpFrame,3,0,2,-1)
+		self.resultsPageGridLayoutForFrames.addWidget(self.blastResFrame,5,0,2,-1)
+		self.resultsPageGridLayoutForFrames.addWidget(self.treeFrame,7,0,1,4)
+		self.resultsPageGridLayoutForFrames.addWidget(self.SimplotFrame,7,4,1,1)
 		self.resultsPageGridLayoutForFrames.addWidget(self.saveGraphicsFrame,7,5,1,1)
+		
 		# / Add the results page here
 		
 		self.stackedWidget.addWidget(self.homePage)
@@ -1265,7 +1267,7 @@ class Ui_MainWindow(QMainWindow):
 		self.menuLabel.setText(QCoreApplication.translate("MainWindow", "Please use the following menu", None))
 		self.orLabel.setText(QCoreApplication.translate("MainWindow", "OR", None))
 
-	def translateResultsUI(self,mainWindow):
+	def translateResultsUI(self, mainWindow):
 		self.listWidget.addItems(mainW.analyzedSeqs)
 
 class Style():

@@ -1,13 +1,16 @@
 import re
 import os
+import copy
 import pathlib
+import logging
+from typing_extensions import final
 import numpy as np
 import pandas as pd
 from Bio import SeqIO, AlignIO
 from Bio.Align.Applications import MuscleCommandline
 
 """
-This functions works in three steps
+This script works in three steps
 1) the extraction of genes
 2) creation of gene profiles
 3) computation of phylogenetic trees
@@ -24,32 +27,39 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 		aln_files = [f for f in aln_files if f.is_file()]
 		return aln_files
 
-	def _filter_manyN(sequence: str, N_perc: float) -> bool:
+	def _check_seq_Ns(sequence: str, N_perc: float, 
+		seqname, gene # Remove after testing
+	) -> bool:
 		"""
 		Check if the provided gene sequence has many Ns and filter the parent organism from the analysis
-		Default N_perc=50%
+		Default N_perc=5%
 		input: Sequence as uppercase string
 		return: True to keep, False to discard
 		"""
-		seq_Nperc = sequence.count("N")/len(sequence)
+		seq_Nperc = round((float(sequence.count("N"))/float(len(sequence))) * 100,3)
+		discard = False
 		if seq_Nperc >= N_perc:
-			return False
-		return True
-
-	def _cut_genes(genomes_f:str, coords_df: pd.DataFrame, 
-		N_perc:float =0.5
+			discard = True
+		# print(F"{seqname} in {gene} has {seq_Nperc} so discard is {discard}")
+		return discard
+	# # This does not work correclty if the gene has extremely many Ns
+	# # Because blast doent get the whole gene (Gives multiple hsps)
+	def _cut_genes(genomes_f: str, coords_df: pd.DataFrame, 
+		N_perc: float = 5.0
 	) -> dict:
 		"""
 		Extract the gene sequences from the input fasta file
-		Default N_perc=50% for _filter_manyN function
-		input: batch file (complete genome), 
-		pandas dataframe with gene coordinates
-		return: dictionary of gene sequences
+		and check if they have N% larger than N_perc=5%
+		The organisms with problematic genes will be excluded from the analysis
+		The default metric was based on the 13 oranisms that were removed during our analysis
+		"Manual inspection of the alignments revealed 13 sequences with many 
+		un-sequenced nucleotides localized in the E5 gene and consequently they were removed
+		from the entire analysis, thus resulting in 180 total representative genome sequences/clusters"
 		"""
 		final_seqs = {}
-		seqs = SeqIO.to_dict(SeqIO.parse(genomes_f, "fasta"))
+		seqs = SeqIO.index(str(genomes_f), "fasta")
 		orgs = list(seqs.keys())
-		skipped_orgs = {}
+		discarded_orgs = {}
 		for org in orgs:
 			tmpdf = coords_df[coords_df["Query sequence"] == org]
 			indeces = tmpdf.index
@@ -61,18 +71,19 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 					final_seqs[gene][org] = ""
 				start = tmpdf.loc[idx,"Query start"]
 				end = tmpdf.loc[idx,"Query end"]
-				seq = str(seqs[org].seq[int(start)-1:int(end)])
-				keep = _filter_manyN(seq, N_perc)
-				if not keep:
-					skipped_orgs[org] = ""
+				seq = str(seqs[org].seq[int(start)-1:int(end)]).upper()
+				discard = _check_seq_Ns(seq, N_perc, org, gene)
+				if discard == True:
+					discarded_orgs[org] = ""
 				final_seqs[gene][org] = seq
-		final_seqs_filt = final_seqs.copy()
+		
+		final_seqs_filt = copy.deepcopy(final_seqs)
 		for gene in final_seqs:
 			for org in final_seqs[gene]:
-				if org in skipped_orgs:
+				if org in discarded_orgs:
 					del final_seqs_filt[gene][org]
 		
-		return final_seqs_filt
+		return final_seqs_filt, discarded_orgs
 		
 	def _align_sequences(gene_files : list, muscle_bin : pathlib.Path,
 		method: str = "muscle"
@@ -99,7 +110,7 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 	batch_genes_dir = outdir / pathlib.Path(".tmp") / pathlib.Path("Gene_seqs")
 	gene_files = []
 	query_f_name = query_f_path.stem 
-	gene_seqs = _cut_genes(query_f_path, coords_df)
+	gene_seqs, kept_orgs = _cut_genes(query_f_path, coords_df)
 	for gene in gene_seqs:
 		fout = batch_genes_dir / pathlib.Path(query_f_name + "_" + gene + ".fa")
 		gene_files.append(fout)
@@ -109,7 +120,7 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 			fhandle.write(str_to_write)
 		fhandle.close()
 	aln_files = _align_sequences(gene_files, muscle_bin)
-	return aln_files
+	return aln_files, kept_orgs
 
 def profile_aln(outdir : pathlib.Path, aln_files : list, 
 	profiledb : str, muscle_bin : str, method : str ="muscle", 
@@ -190,6 +201,7 @@ def build_trees(outdir: pathlib.Path, aln_files: list, phyml_bin: str,
 			pass
 		return 
 	
+	logging.info(F"Initiating {method} tree calculation")
 	trees_dir = outdir / pathlib.Path("Phylogenetic_Trees")
 	alns_dir = aln_files[0].parent
 	if method == "PhyML":
@@ -208,5 +220,6 @@ def build_trees(outdir: pathlib.Path, aln_files: list, phyml_bin: str,
 			cmd = seaview_bin + " -build_tree -NJ -distance " \
 			+ dist + " -replicates " + str(nj_bootstrap_repl) + " -o " + str(tree_file_out) + " " + str(aln_f)
 			os.system(cmd)
-
+	
+	logging.info(F"Finished")
 	return trees_dir

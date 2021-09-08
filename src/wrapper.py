@@ -2,10 +2,10 @@ import os
 import sys
 import pathlib
 import logging
-import datetime
-import argparse
 import pandas as pd
 import multiprocessing
+from Bio import SeqIO
+from Bio import SeqRecord
 # Tool modules
 import annot
 import blast
@@ -55,7 +55,8 @@ def _defaultparams() -> dict:
 		"Gene_identification_Word_size": 7,
 		"GenesProfile_directory": pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'profiles',
 		"GenesRef_database":pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / '16refs_gene_db.fa',
-		"SimplotRef_database":pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'Reference_genomes_profile_mafft_GINSI.fa'
+		"SimplotRef_database":pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'Reference_genomes_profile_mafft_GINSI.fa',
+		"HPV_filter_db": pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'alphapapillomavirus9.fa'
 	}
 	return params
 
@@ -80,6 +81,7 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	logger.setLevel(logging.DEBUG)
 	logging.info(F"Environment set successfully in {outdir} \u2705")
 	logging.info("Parameters used in this run: ")
+	
 	indeces = paramsdf.index
 	for index in indeces:
 		val = paramsdf.loc[index,"Value"]
@@ -88,28 +90,47 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	# Environment setup
 	env_setup.file_exists(query_f_path)
 	env_setup.input_file_format(query_f_path)
-	query_f_filt = env_setup.filter_input_file(query_f_path)
-	query_f = query_f_filt # Posix | Windows Path
-	query_f_path = indir / query_f
 	env_setup.dir_priviledges(outdir)
-	
+
+	# Filter input file
+	workflow = "HPV16 filter"
+	hpv16filt_results = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
+	hpv16_seqs = blast.identify_nonHPV16(hpv16filt_results)
+	query_f_filt = env_setup.filter_hpv16(query_f_path, hpv16_seqs, outdir)
+	query_f = query_f_filt # Posix | Windows Path
+	query_f_path = outdir / query_f
+	logging.info(F"param: query,{str(query_f_path)}")
+	query_f_index = SeqIO.index(str(query_f_path), "fasta")
 	# BLASTn search
 	workflow = "gene identification"
 	geneid_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
 	geneid_blastn_res_path_xlsx = blast.parse_GeneID_results(geneid_blastn_res_path,paramsdf, exe=exe)
+
+	# Filter organisms that have many Ns inside genes
+	aln_files, discarded_orgs = phylogeny.prepare_alns(outdir, query_f_path, geneid_blastn_res_path_xlsx, muscle_bin, exe=exe)
+	records = [query_f_index[org] for org in query_f_index if org not in discarded_orgs]
+	with open(query_f_path, "w") as output_handle:
+		SeqIO.write(records, output_handle, "fasta")
+	output_handle.close()
+	query_f_index = SeqIO.index(str(query_f_path), "fasta")
+	# Continue with renewed fasta_file
 	workflow = "snp"
 	snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
-	snp_blastn_res_path_xlsx = blast.parse_SNP_results(snp_blastn_res_path, exe=exe)
+	snp_blastn_res_path_xlsx = blast.parse_SNP_results(snp_blastn_res_path, query_f_index, exe=exe)
 	workflow = "cancer"
 	C_snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
-	blast.parse_SNP_results(C_snp_blastn_res_path, exe=exe,cancer=True)
+	blast.parse_SNP_results(C_snp_blastn_res_path, query_f_index, exe=exe, cancer=True)
+	annot.annotate_results(annot_f,snp_blastn_res_path_xlsx,exe=exe)
 	
 	# Gene alignments and trees
-	aln_files = phylogeny.prepare_alns(outdir, query_f_path, geneid_blastn_res_path_xlsx, muscle_bin, exe=exe)
 	profiledb_dir = paramsdf.loc["GenesProfile_directory","Value"]
-	aln_files = phylogeny.profile_aln(outdir,aln_files,profiledb_dir, muscle_bin, exe=exe)
-	# if organisms > 20, method = "BioNJ" TODO: Implement
-	trees_dir = phylogeny.build_trees(outdir, aln_files, phyml_bin, seaview_bin, exe=exe)
-	annot.annotate_results(annot_f,snp_blastn_res_path_xlsx,exe=exe)
+	aln_files = phylogeny.profile_aln(outdir, aln_files, profiledb_dir, muscle_bin, exe = exe)
+	
+	organisms = len(query_f_index.keys()) # final seqs to analyze
+	if organisms > 20: 
+		method = "BioNJ" 
+	else: 
+		method = "PhyML"
+	phylogeny.build_trees(outdir, aln_files, phyml_bin, seaview_bin, exe=exe, method = method)
 
-	return trees_dir, outdir
+	return query_f_path

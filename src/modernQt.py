@@ -91,6 +91,9 @@ class MainWindow(QMainWindow):
 		startSize = QSize(1000, 720)
 		self.resize(startSize)
 		self.setMinimumSize(startSize)
+
+		self.buttons = {}		
+		
 		self.ui.stackedWidget.setMinimumWidth(20)
 		GuiFunctions.addNewMenu(self, "Main Page", "homeButton", "url(:/16x16/icons/16x16/cil-home.png)", True)
 		GuiFunctions.addHomeButtons(self)
@@ -172,7 +175,7 @@ class GuiFunctions(MainWindow):
 		button.setText(name)
 		button.setToolTip(name)
 		button.clicked.connect(self.Button)
-
+		self.buttons[name] = button
 		if isTopMenu:
 			self.ui.menusLayout.addWidget(button)
 		else:
@@ -209,7 +212,7 @@ class GuiFunctions(MainWindow):
 		self.homeButtonNames = ["Load the fasta file to analyze", "Select directory to write the output",
 		"Load results", "View help videos  (Opens a separate window)"
 		]
-		self.homeButtons = []
+		# self.homeButtons = []
 		indeces = range(len(self.homeButtonsObj))
 		menuSpacer = QSpacerItem(20, 20)
 		for idx in indeces:
@@ -231,7 +234,7 @@ class GuiFunctions(MainWindow):
 			if objName == "openHelpButton":
 				self.ui.homeMenuVerticalLayout.addItem(menuSpacer)
 			self.ui.homeMenuVerticalLayout.addWidget(homeButton)
-			self.homeButtons.append(homeButton)
+			# self.homeButtons.append(homeButton)
 	
 	def enablePipeline(self):
 		# Delete all the existing widgets
@@ -248,7 +251,7 @@ class GuiFunctions(MainWindow):
 		self.homeButtonNames = ["Execute the pipeline", "Select directory to write the output",
 		"Load results", "View help videos  (Opens a separate window)"
 		]
-		self.homeButtons = []
+		# self.homeButtons = []
 		indeces = range(len(self.homeButtonsObj))
 		menuSpacer = QSpacerItem(20, 20)
 		
@@ -273,10 +276,10 @@ class GuiFunctions(MainWindow):
 			if objName == "openHelpButton":
 				self.ui.homeMenuVerticalLayout.addItem(menuSpacer)
 			self.ui.homeMenuVerticalLayout.addWidget(homeButton)
-			self.homeButtons.append(homeButton)
+			# self.homeButtons.append(homeButton)
 
 	def showError(self,text: str) -> None:
-		errorMsg = QErrorMessage(parent=mainW)
+		errorMsg = QErrorMessage(parent = mainW)
 		errorMsg.setWindowTitle("Error")
 		errorMsg.setWindowModality(Qt.WindowModal)
 		errorMsg.showMessage(text)
@@ -349,9 +352,8 @@ class GuiFunctions(MainWindow):
 			mainW.analyzedSeqs = list(mainW.totalSequenceRecDict.keys())
 			GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)
 			GuiFunctions.initVariables(self)
-			GuiFunctions.selectStandardMenu(self,"resultsButton")
-			mainW.ui.stackedWidget.setCurrentWidget(mainW.ui.resultsPage)
 			mainW.showMaximized()
+			mainW.buttons["Results"].click()
 			return
 
 	def execPipeline(self) -> None:
@@ -379,16 +381,8 @@ class GuiFunctions(MainWindow):
 		self.thread.finished.connect(lambda: self.worker.updateWidgets("finished")) # Step 7
 		self.thread.finished.connect(lambda: GuiFunctions.initVariables(self))
 		self.thread.finished.connect(lambda: GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)) # Step 7
-		self.thread.finished.connect(lambda: GuiFunctions.selectStandardMenu(self, "resultsButton"))
-		self.thread.finished.connect(lambda: mainW.ui.stackedWidget.setCurrentWidget(mainW.ui.resultsPage))
 		self.thread.finished.connect(lambda: mainW.showMaximized())
-	
-	# TODO. need to find a way to reset the style
-	# There is an error when the results windwo appears. The home page style is not reset
-	# if btnWidget.objectName() == "homeButton":
-	# 		self.ui.stackedWidget.setCurrentWidget(self.ui.homePage)
-	# 		GuiFunctions.resetStyle(self, "homeButton")
-	# 		btnWidget.setStyleSheet(GuiFunctions.selectMenu(btnWidget.styleSheet()))
+		self.thread.finished.connect(lambda: mainW.buttons["Results"].click())
 
 	##### Results page functions
 	def initVariables(self: QMainWindow) -> None:
@@ -468,6 +462,8 @@ class GuiFunctions(MainWindow):
 				tmpdf = mainW.dfBlast[mainW.dfBlast["Query sequence"] == mainW.selectedSeq]
 				tmpdf = tmpdf.drop("Query sequence",axis = 1)
 				tmpdf.sort_values("Query start", inplace = True)
+				tmpdf["Perc. identity"] = tmpdf["Perc. identity"].apply(lambda x: "{:0.2f}".format(x))
+				tmpdf["E-value"] = tmpdf["E-value"].apply(lambda x: F"{x:.2e}")
 			if tableName == "lineageSnpTable":
 				if mainW.dfLineageSnp.size == 0: return
 				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq].tail(1).T.head(67) # 67 == num_snps
@@ -515,6 +511,8 @@ class GuiFunctions(MainWindow):
 				table.horizontalHeader().setDefaultSectionSize(int(1100 / tmpdf.shape[1]))
 			if tableName == "lineageSumsTable":
 				table.horizontalHeader().setDefaultSectionSize(120)
+			if tableName == "cancerSnpTable":
+				table.horizontalHeader().setDefaultSectionSize(int(900 / tmpdf.shape[1]))
 		return
 
 	def displayGraphs(self: QListWidgetItem) -> None:
@@ -567,14 +565,19 @@ class GuiFunctions(MainWindow):
 
 	def eteInteractive(self) -> None:
 		buttonId = mainW.ui.TreesRenderButtonGroup.button(self).text()
+		if hasattr(mainW, "selectedSeq") == False:
+			GuiFunctions.showError(self, F"Please select a sequence first")
+			return 
 		t = mainW.trees[buttonId]
 		t.ladderize(direction=1)
 		ts = TreeStyle()
-		ts.title.add_face(TextFace(buttonId),column=1)
+		ts.title.add_face(TextFace(buttonId + " Gene", fsize = 15),column=1)
 
 		# Styling for certain clades
 		selectedSeqstyle = NodeStyle()
 		selectedSeqstyle["bgcolor"] = "Gray"
+		defaultStyle = NodeStyle()
+		defaultStyle["bgcolor"] = "White"
 		linAStyle = NodeStyle()
 		linAStyle["bgcolor"] = "Green"
 		linBStyle = NodeStyle()
@@ -590,7 +593,9 @@ class GuiFunctions(MainWindow):
 			return 
 		for leaf in t.iter_leaves():
 			if leaf.name == mainW.selectedSeq:
-				leaf.img_style=selectedSeqstyle
+				leaf.img_style = selectedSeqstyle
+			if leaf.name != mainW.selectedSeq:
+				leaf.img_style = defaultStyle
 			if re.match(r"^A\d+_\S\d",leaf.name):
 				leaf.img_style=linAStyle			
 			if re.match(r"^B\d+_\S\d",leaf.name):
@@ -662,6 +667,13 @@ class LogWindow(QMainWindow):
 
 		self.finishedWidget = QLabel("Finished! \n Please don't delete the logfile\n You can safely close this window")
 		self.finishedWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+		
+		self.widgets = {
+			"pipelineWidget" : self.pipelineWidget,
+			"finishedWidget" : self.finishedWidget,
+			"progressWidget" : None
+		}
+		
 		mainW.openWindows["log"] = self
 		self.show()
 
@@ -711,10 +723,10 @@ class Simplot_page(QMainWindow):
 		self.simplotGraphWidget.setBackground("w")
 
 		# Initialize the different pen colors
-		self.pen_green = pg.mkPen(color=(40, 237, 43),  width=1.5)
-		self.pen_blue = pg.mkPen(color=(66, 170, 245),  width=1.5)
-		self.pen_orange = pg.mkPen(color=(237, 155, 40),  width=1.5)
-		self.pen_red = pg.mkPen(color=(255, 0, 0),  width=1.5)
+		self.pen_green = pg.mkPen(color=(40, 237, 43),  width=3)
+		self.pen_blue = pg.mkPen(color=(66, 170, 245),  width=3)
+		self.pen_orange = pg.mkPen(color=(237, 155, 40),  width=3)
+		self.pen_red = pg.mkPen(color=(255, 0, 0),  width=3)
 
 		# Plot the curves
 		self.xaxisData, self.yaxisData, self.alnSize, self.qseqSize = simplot.calculate_similarities(self.qseq, self.aln_f,self.step,self.wsize)
@@ -1109,18 +1121,18 @@ class Ui_MainWindow(QMainWindow):
 		self.cancerSnpTable.itemClicked.connect(GuiFunctions.displayCancerSnpInfo)
 		# Text browser
 		self.cancerSnpTextBrowser = QTextBrowser()
-		self.cancerSnpTextBrowser.setMinimumSize(QSize(0,70))
-		self.cancerSnpTextBrowser.setMaximumWidth(500)
+		self.cancerSnpTextBrowser.setMinimumSize(QSize(0,100))
+		self.cancerSnpTextBrowser.setMaximumWidth(800)
 		self.cancerSnpTextBrowser.setStyleSheet(Style.style_text_browser)
 		self.cancerSnpTextBrowser.setOpenLinks(False)
 		self.cancerSnpTextBrowser.anchorClicked.connect(GuiFunctions.openPubmedUrl)
 
 		self.cancerSnpGridLayout.addWidget(self.cancnerSnpLabel, 0, 0, 1, 1)
-		self.cancerSnpGridLayout.addWidget(self.cancerSnpTable, 1, 0, 3, 2)
-		self.cancerSnpGridLayout.addWidget(self.cancerSnpTextBrowser, 1, 3,-1,-1)
+		self.cancerSnpGridLayout.addWidget(self.cancerSnpTable, 1, 0, 2, 1)
+		self.cancerSnpGridLayout.addWidget(self.cancerSnpTextBrowser, 1, 1,-1,-1)
 
 		self.cancerSnpTable.horizontalHeader().setCascadingSectionResizes(True)
-		self.cancerSnpTable.horizontalHeader().setDefaultSectionSize(150)
+		self.cancerSnpTable.horizontalHeader().setDefaultSectionSize(100)
 	
 		self.cancerSnpTable.horizontalHeader().setStretchLastSection(True)
 		self.cancerSnpTable.verticalHeader().setStretchLastSection(True)
@@ -1145,13 +1157,13 @@ class Ui_MainWindow(QMainWindow):
 		row = 1
 		col = 0
 		self.genes = ["E6", "E7", "E1", "E2", "E4", "E5", "L2", "L1"]
-		self.treeGridLayout.addWidget(self.treeLabel, 0, 0,1,2)
+		self.treeGridLayout.addWidget(self.treeLabel, 0, 0)
 		for gene in self.genes:
 			self.treeButton = QPushButton(gene)
 			self.treeButton.setObjectName(F"treeButton{gene}")
 			self.treeButton.setStyleSheet(Style.style_push_button)
 			self.TreesRenderButtonGroup.addButton(self.treeButton)
-			self.treeGridLayout.addWidget(self.treeButton, row, col, 1, 1)
+			self.treeGridLayout.addWidget(self.treeButton, row, col)
 			col += 1
 			if col == 4:
 				row += 1

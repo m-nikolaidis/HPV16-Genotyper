@@ -104,15 +104,16 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	# BLASTn search
 	workflow = "gene identification"
 	geneid_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
-	geneid_blastn_res_path_xlsx = blast.parse_GeneID_results(geneid_blastn_res_path,paramsdf, exe=exe)
+	geneid_blastn_res_path_xlsx, kept_orgs = blast.parse_GeneID_results(geneid_blastn_res_path,paramsdf, exe=exe)
 
 	# Filter organisms that have many Ns inside genes
-	aln_files, discarded_orgs = phylogeny.prepare_alns(outdir, query_f_path, geneid_blastn_res_path_xlsx, muscle_bin, exe=exe)
-	records = [query_f_index[org] for org in query_f_index if org not in discarded_orgs]
+	aln_files = phylogeny.prepare_alns(outdir, query_f_path, geneid_blastn_res_path_xlsx, muscle_bin, exe=exe)
+	records = [query_f_index[org] for org in query_f_index if org in kept_orgs]
 	with open(query_f_path, "w") as output_handle:
 		SeqIO.write(records, output_handle, "fasta")
 	output_handle.close()
 	query_f_index = SeqIO.index(str(query_f_path), "fasta")
+	
 	# Continue with renewed fasta_file
 	workflow = "snp"
 	snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)

@@ -50,7 +50,7 @@ def blastn_search(exe_params: pd.DataFrame, query_f_path: pathlib.Path,
 	tmp = pathlib.Path(".tmp")
 	dbout = outdir / tmp / db_file
 	blastres_f_path = outdir / "BlastResults" / blastres_f
-	outfmt = "6 qaccver saccver qstart qend sstart send evalue bitscore length pident qcovs qcovhsp"
+	outfmt = "6 qaccver saccver qstart qend sstart send evalue bitscore length pident qcovs qcovhsp slen"
 	makedb = NcbimakeblastdbCommandline(cmd = makeblastdb_bin,
 										dbtype ="nucl",
 										input_file = db_path,
@@ -82,6 +82,8 @@ def parse_GeneID_results(blastres_f_path: pathlib.Path,
 		exe:bool =True
 	) -> pathlib.Path:
 	"""
+	In order to avoid the small gene fragments and to filter the genes that
+	have many Ns (more than one hsp usually), a subject coverage filter is applied per hsp (>=90%)
 	Writes excel file
 	"""
 	
@@ -91,16 +93,16 @@ def parse_GeneID_results(blastres_f_path: pathlib.Path,
 	
 	logging.info("Parsing - gene identification results ")
 	
-	col_names = ["Query sequence", "Subject sequence", "Query start", "Query end", "Subject start", "Subject end",
-			"E-value", "Bitscore", "Aln length", "Perc. identity", "Query coverage", "Query coverage hsp"
+	col_names = ["Query sequence", "Subject sequence", "Query start", "Query end",
+			 "Subject start", "Subject end", "E-value", "Bitscore", "Aln length", 
+			 "Perc. identity", "Query coverage", "Query coverage hsp", "Subject length"
 	]
 	df = pd.read_csv(blastres_f_path, sep="\t",names = col_names)
-
 	seqs = np.unique(df["Query sequence"])
+	df["Gene"] = df["Subject sequence"].apply(lambda x: x.split("_")[2])	
+	df["Subject coverage"] = ((df["Subject end"] - df["Subject start"] + 1)/ df["Subject length"] ) * 100
+	df = df[df["Subject coverage"] >= 90.0]
 
-	df["Gene"] = df["Subject sequence"].apply(lambda x: x.split("_")[1])	
-	df.drop(["Query coverage", "Query coverage hsp"],axis = 1, inplace = True)
-	
 	kept_indeces = []
 	for seq in seqs:
 		tmpdf = df.loc[df["Query sequence"] == seq]
@@ -113,12 +115,14 @@ def parse_GeneID_results(blastres_f_path: pathlib.Path,
 				if tmpdf.loc[idx, "E-value"] < evalue:
 					evalue = tmpdf.loc[idx, "E-value"]
 					final_idx = idx
-			kept_indeces.append(final_idx)
+			if tmpdf.loc[idx, "Subject coverage"] >= 90.0:
+				kept_indeces.append(final_idx)
 	
 	df = df.loc[kept_indeces]
 	df.index = range(len(df))
-	df["Perc. identity"] = df["Perc. identity"].apply(lambda x: "{:0.3f}".format(x))
+	df["Perc. identity"] = df["Perc. identity"].apply(lambda x: "{:0.2f}".format(x))
 	df["E-value"] = df["E-value"].apply(lambda x: F"{x:.2e}")
+	
 	df["Lineage"] = df["Subject sequence"].apply(lambda x: x.split("_")[0][0])
 	df["Sublineage"] = df["Subject sequence"].apply(lambda x: x.split("_")[0])
 	df = df[[
@@ -135,8 +139,9 @@ def parse_GeneID_results(blastres_f_path: pathlib.Path,
 		"Perc. identity",
 		"E-value"
 	]]
+	kept_orgs = np.unique(df["Query sequence"])
 	df.to_excel(geneID_results_path, index = False)
-	return geneID_results_path
+	return geneID_results_path, kept_orgs
 
 def parse_SNP_results(blastres_f_path: pathlib.Path, seqindex: dict,
 	exe:bool = True, cancer:bool = False
@@ -165,8 +170,9 @@ def parse_SNP_results(blastres_f_path: pathlib.Path, seqindex: dict,
 	probe_len = 31
 	probe_table_res = {}
 	
-	col_names = ["Query sequence", "Subject sequence", "Query start", "Query end", "Subject start", "Subject end",
-			"E-value", "Bitscore", "Aln length", "Perc. identity", "Query coverage", "Query coverage hsp"
+	col_names = ["Query sequence", "Subject sequence", "Query start", "Query end",
+			 "Subject start", "Subject end", "E-value", "Bitscore", "Aln length", 
+			 "Perc. identity", "Query coverage", "Query coverage hsp", "Subject length"
 	]
 	df = pd.read_csv(blastres_f_path, sep = "\t", names = col_names)
 	
@@ -236,9 +242,11 @@ def find_recombinants(blastdf: pd.DataFrame, lineageSnpDf: pd.DataFrame) -> dict
 	orgs = np.unique(blastdf["Query sequence"])
 	for org in orgs:
 		recombStatus[org] = {"geneID":0,"lSNP":0}
+		# Recombination by gene identification
 		tmpl = np.unique(blastdf[blastdf["Query sequence"] == org]["Lineage"].values)
 		if len(tmpl) > 1:
 			recombStatus[org]["geneID"] = 1
+		# Recombination by lineage specific SNPs
 		tmpdf = lineageSnpDf[lineageSnpDf.index == org].tail(1).T.head(67) # lineageSnpDf["Index"] will become lineageSnpDf.index
 		tmplineages = dict(Counter(tmpdf[tmpdf.columns[0]].values))
 		dom_lineage = max(tmplineages,key=lambda key: tmplineages[key])
@@ -248,11 +256,22 @@ def find_recombinants(blastdf: pd.DataFrame, lineageSnpDf: pd.DataFrame) -> dict
 			val = tmpdf.loc[idx].values[0]
 			if val == dom_lineage:
 				non_dom_consec = 0
-			if val != dom_lineage and val != "Other":
-				non_dom_consec += 1
-				if non_dom_consec >= 3: 
-					recombStatus[org]["lSNP"] = 1
+			if dom_lineage == "Lin_A":
+				if val != dom_lineage and val != "Other":
+					non_dom_consec += 1
+					if non_dom_consec >= 3:
+						recombStatus[org]["lSNP"] = 1	
+			else:
+				if dom_lineage == "Other":
+					continue
+				else:
+					if val == "Lin_A" and val != "Other":
+						non_dom_consec += 1
+						if non_dom_consec >= 3:
+							recombStatus[org]["lSNP"] = 1
+					
 	recombinants = [org for org in recombStatus if recombStatus[org]["geneID"] != 0 and recombStatus[org]["lSNP"] != 0]
+	# TODO: Write this to ouput file, so i dont run it everytime i open results
 	return recombinants, recombStatus
 
 def identify_nonHPV16(blastres_f_path: pathlib.Path) -> list:
@@ -267,7 +286,7 @@ def identify_nonHPV16(blastres_f_path: pathlib.Path) -> list:
 	logging.info("Identifying HPV16 sequences")
 
 	col_names = ["Query sequence", "Subject sequence", "Query start", "Query end", "Subject start", "Subject end",
-			"E-value", "Bitscore", "Aln length", "Perc. identity", "Query coverage", "Query coverage hsp"
+			"E-value", "Bitscore", "Aln length", "Perc. identity", "Query coverage", "Query coverage hsp", "Subject length"
 	]
 	df = pd.read_csv(blastres_f_path, sep="\t",names = col_names)
 	hpv16filt_results_path = blastres_f_path.parent / ".." / "HPV16filt_BlastN_results.xlsx"

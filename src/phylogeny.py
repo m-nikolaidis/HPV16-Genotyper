@@ -27,25 +27,25 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 		aln_files = [f for f in aln_files if f.is_file()]
 		return aln_files
 
-	def _check_seq_Ns(sequence: str, N_perc: float, 
-		seqname, gene # Remove after testing
-	) -> bool:
-		"""
-		Check if the provided gene sequence has many Ns and filter the parent organism from the analysis
-		Default N_perc=5%
-		input: Sequence as uppercase string
-		return: True to keep, False to discard
-		"""
-		seq_Nperc = round((float(sequence.count("N"))/float(len(sequence))) * 100,3)
-		discard = False
-		if seq_Nperc >= N_perc:
-			discard = True
-		# print(F"{seqname} in {gene} has {seq_Nperc} so discard is {discard}")
-		return discard
-	# # This does not work correclty if the gene has extremely many Ns
-	# # Because blast doent get the whole gene (Gives multiple hsps)
+	# def _check_seq_Ns(sequence: str, N_perc: float, 
+	# ) -> bool:
+	# 	"""
+	# 	Check if the provided gene sequence has many Ns and filter the parent organism from the analysis
+	# 	Default N_perc=5%
+	# 	input: Sequence as uppercase string
+	# 	return: True to keep, False to discard
+	# 	"""
+	# 	seq_Nperc = round((float(sequence.count("N"))/float(len(sequence))) * 100,3)
+	# 	discard = False
+	# 	if seq_Nperc >= N_perc:
+	# 		discard = True
+	# 	# print(F"{seqname} in {gene} has {seq_Nperc} so discard is {discard}")
+	# 	return discard
+	# # # This does not work correclty if the gene has extremely many Ns
+	# # # Because blast doent get the whole gene (Gives multiple hsps)
+	
 	def _cut_genes(genomes_f: str, coords_df: pd.DataFrame, 
-		N_perc: float = 5.0
+		# N_perc: float = 5.0
 	) -> dict:
 		"""
 		Extract the gene sequences from the input fasta file
@@ -59,7 +59,7 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 		final_seqs = {}
 		seqs = SeqIO.index(str(genomes_f), "fasta")
 		orgs = list(seqs.keys())
-		discarded_orgs = {}
+		# discarded_orgs = {}
 		for org in orgs:
 			tmpdf = coords_df[coords_df["Query sequence"] == org]
 			indeces = tmpdf.index
@@ -72,18 +72,19 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 				start = tmpdf.loc[idx,"Query start"]
 				end = tmpdf.loc[idx,"Query end"]
 				seq = str(seqs[org].seq[int(start)-1:int(end)]).upper()
-				discard = _check_seq_Ns(seq, N_perc, org, gene)
-				if discard == True:
-					discarded_orgs[org] = ""
+				# discard = _check_seq_Ns(seq, N_perc, org, gene)
+				# if discard == True:
+				# 	discarded_orgs[org] = ""
 				final_seqs[gene][org] = seq
+
+		return final_seqs		
+		# final_seqs_filt = copy.deepcopy(final_seqs)
+		# for gene in final_seqs:
+		# 	for org in final_seqs[gene]:
+		# 		if org in discarded_orgs:
+		# 			del final_seqs_filt[gene][org]
 		
-		final_seqs_filt = copy.deepcopy(final_seqs)
-		for gene in final_seqs:
-			for org in final_seqs[gene]:
-				if org in discarded_orgs:
-					del final_seqs_filt[gene][org]
-		
-		return final_seqs_filt, discarded_orgs
+		# return final_seqs_filt, discarded_orgs
 		
 	def _align_sequences(gene_files : list, muscle_bin : pathlib.Path,
 		method: str = "muscle"
@@ -110,7 +111,7 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 	batch_genes_dir = outdir / pathlib.Path(".tmp") / pathlib.Path("Gene_seqs")
 	gene_files = []
 	query_f_name = query_f_path.stem 
-	gene_seqs, kept_orgs = _cut_genes(query_f_path, coords_df)
+	gene_seqs = _cut_genes(query_f_path, coords_df)
 	for gene in gene_seqs:
 		fout = batch_genes_dir / pathlib.Path(query_f_name + "_" + gene + ".fa")
 		gene_files.append(fout)
@@ -120,7 +121,7 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 			fhandle.write(str_to_write)
 		fhandle.close()
 	aln_files = _align_sequences(gene_files, muscle_bin)
-	return aln_files, kept_orgs
+	return aln_files
 
 def profile_aln(outdir : pathlib.Path, aln_files : list, 
 	profiledb : str, muscle_bin : str, method : str ="muscle", 
@@ -201,12 +202,23 @@ def build_trees(outdir: pathlib.Path, aln_files: list, phyml_bin: str,
 			pass
 		return 
 	
+	def _clean_nj_output(tree_f: pathlib.Path) -> None:
+		"""
+		Removes the leading info generated from SeaView in CMD mode
+		----> [NJ \d+ sites Kimura \d+ repl.] <----
+		"""
+		text = tree_f.read_text()
+		m = re.match(nj_regex,text)
+		new_text = m.group(1)
+		tree_f.write_text(new_text)
+	
 	logging.info(F"Initiating {method} tree calculation")
 	trees_dir = outdir / pathlib.Path("Phylogenetic_Trees")
 	alns_dir = aln_files[0].parent
 	if method == "PhyML":
 		phylip_dir = alns_dir / pathlib.Path("phylip")
-		phylip_dir.mkdir(exist_ok=True) # TODO: Think if exist_ok is fine
+		phylip_dir.mkdir(exist_ok=True)
+	nj_regex = re.compile(r"^\[NJ \d+ sites Kimura.+\] (\S+)")
 	for aln_f in aln_files:
 		if method == "PhyML":
 				phylip_aln_f = phylip_dir / aln_f.with_suffix(".phy").name
@@ -214,12 +226,12 @@ def build_trees(outdir: pathlib.Path, aln_files: list, phyml_bin: str,
 				cmd = phyml_bin + " --quiet -o tl -s SPR -v estimated -m GTR -d nt -b -4 -f m -i " + str(phylip_aln_f)
 				os.system(cmd)
 				_clean_phyml_output(phylip_aln_f,trees_dir)
-
 		if method == "BioNJ":
 			tree_file_out = trees_dir / (aln_f.stem + "_NJ_tree.nwk")
 			cmd = seaview_bin + " -build_tree -NJ -distance " \
 			+ dist + " -replicates " + str(nj_bootstrap_repl) + " -o " + str(tree_file_out) + " " + str(aln_f)
 			os.system(cmd)
+			_clean_nj_output(tree_file_out)
 	
 	logging.info(F"Finished")
 	return trees_dir

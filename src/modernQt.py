@@ -526,7 +526,9 @@ class GuiFunctions(MainWindow):
 				tmpdf["Sublineage"] = tmpdf["Subject sequence"].apply(lambda x: x.split("_")[0])
 				fig = px.scatter(tmpdf, x="Gene", y=tmpdf.index, size="Perc. identity", color="Lineage",text="Sublineage",
 				hover_data=["Sublineage","Query start","Query end","Perc. identity"], 
-				color_discrete_map = mainW.geneIDColorDict
+				color_discrete_map = mainW.geneIDColorDict, category_orders = {
+					"Gene":["E6", "E7", "E1", "E2", "E4", "E5", "L2", "L1"]
+					}
 				)
 				fig.update_layout(height=200, legend_y=1.5)
 				# fig.layout.modebar(remove=["lasso2d", "lasso", ])
@@ -723,10 +725,10 @@ class Simplot_page(QMainWindow):
 		self.simplotGraphWidget.setBackground("w")
 
 		# Initialize the different pen colors
-		self.pen_green = pg.mkPen(color=(40, 237, 43),  width=3)
-		self.pen_blue = pg.mkPen(color=(66, 170, 245),  width=3)
-		self.pen_orange = pg.mkPen(color=(237, 155, 40),  width=3)
-		self.pen_red = pg.mkPen(color=(255, 0, 0),  width=3)
+		self.pen_green = pg.mkPen(color=(40, 237, 43),  width=2.5)
+		self.pen_blue = pg.mkPen(color=(66, 170, 245),  width=2.5)
+		self.pen_orange = pg.mkPen(color=(237, 155, 40),  width=2.5)
+		self.pen_red = pg.mkPen(color=(255, 0, 0),  width=2.5)
 
 		# Plot the curves
 		self.xaxisData, self.yaxisData, self.alnSize, self.qseqSize = simplot.calculate_similarities(self.qseq, self.aln_f,self.step,self.wsize)

@@ -128,7 +128,7 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	aln_files = phylogeny.profile_aln(outdir, aln_files, profiledb_dir, muscle_bin, exe = exe)
 	
 	organisms = len(query_f_index.keys()) # final seqs to analyze
-	if organisms > 20: 
+	if organisms > 10: 
 		method = "BioNJ" 
 	else: 
 		method = "PhyML"

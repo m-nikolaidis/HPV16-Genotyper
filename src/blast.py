@@ -270,7 +270,7 @@ def find_recombinants(blastdf: pd.DataFrame, lineageSnpDf: pd.DataFrame) -> dict
 						if non_dom_consec >= 3:
 							recombStatus[org]["lSNP"] = 1
 					
-	recombinants = [org for org in recombStatus if recombStatus[org]["geneID"] != 0 and recombStatus[org]["lSNP"] != 0]
+	recombinants = [org for org in recombStatus if recombStatus[org]["geneID"] != 0 or recombStatus[org]["lSNP"] != 0]
 	# TODO: Write this to ouput file, so i dont run it everytime i open results
 	return recombinants, recombStatus
 

@@ -21,6 +21,7 @@ import simplot # Tool module
 import pathlib
 import logging
 import files_rc
+import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 import plotly.express as px
@@ -300,10 +301,10 @@ class GuiFunctions(MainWindow):
 		fasta_path = pathlib.Path(response[0])
 		if fasta_path != pathlib.Path("."):
 			mainW.fasta_path = fasta_path
-			mainW.outdir = pathlib.Path.cwd() / "Script_out" / pathlib.Path(str(fasta_path.stem) + "_" + str(date.today()).replace("-","_"))
+			mainW.paramsdf.loc["out"] = mainW.paramsdf.loc["out"] / pathlib.Path(str(fasta_path.stem) + "_" + str(date.today()).replace("-","_"))
 			mainW.paramsdf.loc["query"] = str(mainW.fasta_path)
 			mainW.paramsdf.loc["in"] = str(mainW.fasta_path.parent)
-			mainW.paramsdf.loc["out"] = str(mainW.outdir)
+			mainW.outdir = mainW.paramsdf.loc["out", "Value"]
 			GuiFunctions.enablePipeline(self)
 			return 
 		else:
@@ -348,6 +349,7 @@ class GuiFunctions(MainWindow):
 						val = pathlib.Path(val)	
 					mainW.paramsdf.loc[index] = val
 			mainW.fasta_path = mainW.paramsdf.loc["query","Value"]
+
 			mainW.totalSequenceRecDict = SeqIO.index(str(mainW.fasta_path),"fasta")
 			mainW.analyzedSeqs = list(mainW.totalSequenceRecDict.keys())
 			GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)
@@ -518,12 +520,25 @@ class GuiFunctions(MainWindow):
 	def displayGraphs(self: QListWidgetItem) -> None:
 		mainW.ui.graphicsList = []
 		browsers = [mainW.ui.geneIDBrowser, mainW.ui.snpBrowser]
+		columns = ["Gene", "Lineage", "Sublineage", "Query start", "Query end", "Subject sequence", 
+			"Subject start","Subject end","Aln length","Perc. identity","E-value"
+		]
+		data = {"Gene":"", "Lineage" : "", "Sublineage" : "",
+			"Query start": 0, "Query end": 0, "Subject sequence": "", 
+			"Subject start": 0, "Subject end": 0, "Aln length": 0, "Perc. identity": 0, "E-value": 1.0}
 		for browser in browsers:
 			browserName = browser.objectName()
 			if browserName == "geneIDBrowser":
 				tmpdf = mainW.dfGeneIdentification[mainW.dfGeneIdentification.index == mainW.selectedSeq]
 				tmpdf = tmpdf.sort_values("Query start")
 				tmpdf["Sublineage"] = tmpdf["Subject sequence"].apply(lambda x: x.split("_")[0])
+				# To add the missing genes in axis
+				idx = tmpdf.tail(1).index
+				for gene in mainW.ui.genes:
+					if gene not in tmpdf["Gene"].values:
+						geneDF = pd.DataFrame(index=idx, data = data)
+						geneDF["Gene"] = gene
+						tmpdf = pd.concat([tmpdf, geneDF])		
 				fig = px.scatter(tmpdf, x="Gene", y=tmpdf.index, size="Perc. identity", color="Lineage",text="Sublineage",
 				hover_data=["Sublineage","Query start","Query end","Perc. identity"], 
 				color_discrete_map = mainW.geneIDColorDict, category_orders = {

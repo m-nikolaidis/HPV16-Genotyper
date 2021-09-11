@@ -1,21 +1,17 @@
 import re
 import os
+import sys
 import copy
+import shlex
 import pathlib
 import logging
-from typing_extensions import final
+import subprocess
+import multiprocessing
 import numpy as np
 import pandas as pd
 from Bio import SeqIO, AlignIO
 from Bio.Align.Applications import MuscleCommandline
-
-"""
-This script works in three steps
-1) the extraction of genes
-2) creation of gene profiles
-3) computation of phylogenetic trees
-The exe keyword argument dictates if the function is executed or just returns the desired output
-"""
+from multiprocessing.pool import ThreadPool
 
 def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path, 
 	geneid_blast_res_xls: pathlib.Path, muscle_bin: str, exe: bool = True
@@ -158,7 +154,7 @@ def profile_aln(outdir : pathlib.Path, aln_files : list,
 	return profile_aln_files
 
 def build_trees(outdir: pathlib.Path, aln_files: list, phyml_bin: str, 
-	seaview_bin: str, method: str = "PhyML", dist: str = "Kimura", 
+	seaview_bin: str, threads: int, method: str = "PhyML", dist: str = "Kimura", 
 	nj_bootstrap_repl: int = 1000, exe: bool = True
 ) -> pathlib.Path:
 	"""
@@ -212,25 +208,46 @@ def build_trees(outdir: pathlib.Path, aln_files: list, phyml_bin: str,
 		new_text = m.group(1)
 		tree_f.write_text(new_text)
 	
-	logging.info(F"Initiating {method} tree calculation")
+	def callBioNJprocc(cmd) -> tuple:
+		""" This runs in a separate thread. """
+		#subprocess.call(shlex.split(cmd))  # This will block until cmd finishes
+		system = sys.platform
+		if "win" in system:
+			p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		else:
+			p = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		out, err = p.communicate()
+		return (out, err)
+
 	trees_dir = outdir / pathlib.Path("Phylogenetic_Trees")
 	alns_dir = aln_files[0].parent
+	
+	logging.info(F"Initiating {method} tree calculation")
 	if method == "PhyML":
 		phylip_dir = alns_dir / pathlib.Path("phylip")
 		phylip_dir.mkdir(exist_ok=True)
-	nj_regex = re.compile(r"^\[NJ \d+ sites Kimura.+\] (\S+)")
-	for aln_f in aln_files:
-		if method == "PhyML":
-				phylip_aln_f = phylip_dir / aln_f.with_suffix(".phy").name
-				_create_phylip_input(aln_f, phylip_aln_f)
-				cmd = phyml_bin + " --quiet -o tl -s SPR -v estimated -m GTR -d nt -b -4 -f m -i " + str(phylip_aln_f)
-				os.system(cmd)
-				_clean_phyml_output(phylip_aln_f,trees_dir)
-		if method == "BioNJ":
-			tree_file_out = trees_dir / (aln_f.stem + "_NJ_tree.nwk")
-			cmd = seaview_bin + " -build_tree -NJ -distance " \
-			+ dist + " -replicates " + str(nj_bootstrap_repl) + " -o " + str(tree_file_out) + " " + str(aln_f)
+		for aln_f in aln_files:
+			phylip_aln_f = phylip_dir / aln_f.with_suffix(".phy").name
+			_create_phylip_input(aln_f, phylip_aln_f)
+			cmd = phyml_bin + " --quiet -o tl -s SPR -v estimated -m GTR -d nt -b -4 -f m -i " + str(phylip_aln_f)
 			os.system(cmd)
+			_clean_phyml_output(phylip_aln_f,trees_dir)
+	
+	if method == "BioNJ":
+		pool = ThreadPool(threads)
+		nj_regex = re.compile(r"^\[NJ \d+ sites Kimura.+\] (\S+)")
+		results = []
+		for aln_f in aln_files:
+			tree_file_out = trees_dir / (aln_f.stem + "_NJ_tree.nwk")
+			arguments = " -build_tree -NJ -distance " + dist \
+				+ " -replicates " + str(nj_bootstrap_repl) + " -o " \
+				+ str(tree_file_out) + " " + str(aln_f)
+			results.append(pool.apply_async(callBioNJprocc, (seaview_bin + arguments,)))
+
+		pool.close()
+		pool.join()
+		for aln_f in aln_files:
+			tree_file_out = trees_dir / (aln_f.stem + "_NJ_tree.nwk")
 			_clean_nj_output(tree_file_out)
 	
 	logging.info(F"Finished")

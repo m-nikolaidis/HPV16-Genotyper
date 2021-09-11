@@ -93,3 +93,7 @@ Also filtering the non HPV-16 genomes
 If no output directory is specified the results are thrown into the script directory with the Fasta input
 
 filename prefix (without the extension) and the current date
+
+# lineage snp graph
+This graph is showing the A,B,C,D specfic SNPs and the BCD specific
+So we can divide the A from the non-A

@@ -38,7 +38,7 @@ def _defaultparams() -> dict:
 	system = sys.platform
 	input_dir = ""
 	query_f = ""
-	outdir = pathlib.Path(os.getcwd()) / pathlib.Path("Script_out") 
+	outdir = pathlib.Path(__file__).absolute().parent / pathlib.Path("Script_out")
 	threads_to_use =  multiprocessing.cpu_count() - 2
 	params = {
 		"system": system,
@@ -48,15 +48,15 @@ def _defaultparams() -> dict:
 		"query": query_f,
 		"SNP_identification_Evalue": 0.005,
 		"SNP_identification_Word_Size": 4,
-		"SNP_annotation_file": pathlib.Path(os.getcwd()) / 'resources'/ 'SNPs_annotation.xlsx',
-		"SNP_db_path": pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'NC_001526_probes.fa',
-		"cSNP_db_path": pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'NC_001526_cancer_probes.fa',
+		"SNP_annotation_file": pathlib.Path(__file__).parent / 'resources'/ 'SNPs_annotation.xlsx',
+		"SNP_db_path": pathlib.Path(__file__).parent / 'resources' / 'sequences' / 'NC_001526_probes.fa',
+		"cSNP_db_path": pathlib.Path(__file__).parent / 'resources' / 'sequences' / 'NC_001526_cancer_probes.fa',
 		"Gene_identification_Evalue": 1e-5, 
 		"Gene_identification_Word_size": 7,
-		"GenesProfile_directory": pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'profiles',
-		"GenesRef_database":pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / '16refs_gene_db.fa',
-		"SimplotRef_database":pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'Reference_genomes_profile_mafft_GINSI.fa',
-		"HPV_filter_db": pathlib.Path(os.getcwd()) / 'resources' / 'sequences' / 'alphapapillomavirus9.fa'
+		"GenesProfile_directory": pathlib.Path(__file__).parent / 'resources' / 'sequences' / 'profiles',
+		"GenesRef_database":pathlib.Path(__file__).parent / 'resources' / 'sequences' / '16refs_gene_db.fa',
+		"SimplotRef_database":pathlib.Path(__file__).parent / 'resources' / 'sequences' / 'Reference_genomes_profile_mafft_GINSI.fa',
+		"HPV_filter_db": pathlib.Path(__file__).parent / 'resources' / 'sequences' / 'alphapapillomavirus9.fa'
 	}
 	return params
 
@@ -70,7 +70,8 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	query_f_path = indir / query_f
 	makeblastdb_bin,blastn_bin,muscle_bin,seaview_bin,phyml_bin = _init_binaries(system)
 	annot_f = pathlib.Path(paramsdf.loc["SNP_annotation_file","Value"])
-	
+	threads = paramsdf.loc["num_threads", "Value"]
+
 	# Grab the root logger instance and use it for logging
 	logfile = outdir / pathlib.Path(".logfile.log")
 	logger = logging.getLogger()
@@ -132,6 +133,6 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 		method = "BioNJ" 
 	else: 
 		method = "PhyML"
-	phylogeny.build_trees(outdir, aln_files, phyml_bin, seaview_bin, exe=exe, method = method)
+	phylogeny.build_trees(outdir, aln_files, phyml_bin, seaview_bin, threads = threads, exe=exe, method = method)
 
 	return query_f_path

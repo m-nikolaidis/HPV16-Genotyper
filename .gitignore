@@ -81,9 +81,15 @@ ideas
 src/Script_out/*
 src/ete3
 config_files
+problematicCancerSNPs/*
+*.ai
+*.pdf
 
 # MS office and simple text
 *.docx
 *.xlsx
 *.pptp
 *.txt
+
+# Compiled versions
+Compile/*

@@ -29,6 +29,7 @@ from datetime import date
 from Bio import SeqIO
 from QLed import QLed
 from PyQt5.QtGui import (
+	QPixmap, 
 	QFont, QFontDatabase, QIcon,
 	QDesktopServices
 )
@@ -171,7 +172,7 @@ class GuiFunctions(MainWindow):
 		button.setMinimumSize(QSize(0, 70))
 		button.setLayoutDirection(Qt.LeftToRight)
 		button.setFont(font)
-		button.setStyleSheet(Style.style_bt_standard.replace('ICON_REPLACE', icon))
+		button.setStyleSheet(Style.style_bt_menu_standard.replace('ICON_REPLACE', icon))
 		button.setText(name)
 		button.setToolTip(name)
 		button.clicked.connect(self.Button)
@@ -182,11 +183,11 @@ class GuiFunctions(MainWindow):
 			self.ui.layout_menu_bottom.addWidget(button)
 
 	def selectMenu(getStyle):
-		select = getStyle + ("QPushButton { border-right: 7px solid rgb(44, 49, 60); }")
+		select = getStyle + ("QPushButton { border-right: 7px solid #f5f5f5; }")
 		return select
 
 	def deselectMenu(getStyle):
-		deselect = getStyle.replace("QPushButton { border-right: 7px solid rgb(44, 49, 60); }", "")
+		deselect = getStyle.replace("QPushButton { border-right: 7px solid #f5f5f5; }", "")
 		return deselect
 
 	# Starting selections
@@ -821,8 +822,8 @@ class Ui_MainWindow(QMainWindow):
 			QMainWindow {background: transparent; }
 			QToolTip {
 				color: #FFFFFF;"
-				background-color: rgba(27, 29, 35, 160);"
-				border: 1px solid rgb(40, 40, 40);"
+				background-color: #FFFFFF;"
+				border: 1px solid #FFFFFF;"
 				border-radius: 2px;"
 				}
 			"""
@@ -830,7 +831,7 @@ class Ui_MainWindow(QMainWindow):
 		self.centralwidget = QWidget(MainWindow)
 		self.centralwidget.setStyleSheet(
 				"background: transparent;\n"
-				"color: rgb(210, 210, 210);"
+				"color: #000000;"
 		)
 
 		self.horizontalLayout = QHBoxLayout(self.centralwidget)
@@ -848,20 +849,21 @@ class Ui_MainWindow(QMainWindow):
 		self.frame_top_info.setMinimumSize(QSize(0, 45))
 		self.frame_top_info.setMaximumSize(QSize(16777215, 45))
 		self.frame_top_info.setStyleSheet(
-			"background-color: rgb(39, 44, 54);"
+			"background-color: #f5f5f5;"
+			"color: #000000;"
 		)
 
 		self.horizontalLayout_2 = QHBoxLayout(self.frame_top_info)
 
 		self.pageNameInfo = QLabel()
 		self.pageNameInfo.setFont(font1)
-		self.pageNameInfo.setStyleSheet(u"color: rgb(98, 103, 111);")
+		self.pageNameInfo.setStyleSheet(u"color: #000000;")
 
 		self.verticalLayout.addWidget(self.frame_top_info)
 		self.horizontalLayout_2.addWidget(self.pageNameInfo)
 	
 		self.frame_center = QFrame(self.frame_main)
-		self.frame_center.setStyleSheet("background-color: rgb(40, 44, 52);")
+		self.frame_center.setStyleSheet("background-color: #FFFFFF;")
 
 		self.horizontalLayout_1 = QHBoxLayout(self.frame_center)
 		self.horizontalLayout_1.setSpacing(0)
@@ -870,7 +872,7 @@ class Ui_MainWindow(QMainWindow):
 		self.frame_left_menu.setMaximumSize(QSize(70, 16777215))
 
 		self.frame_left_menu.setLayoutDirection(Qt.LeftToRight)
-		self.frame_left_menu.setStyleSheet(u"background-color: rgb(27, 29, 35);")
+		self.frame_left_menu.setStyleSheet(u"background-color: #f5f5f5;")
 		
 		self.verticalLayout_3 = QVBoxLayout(self.frame_left_menu)
 		self.verticalLayout_3.setSpacing(1)
@@ -889,7 +891,7 @@ class Ui_MainWindow(QMainWindow):
 
 		# The right panel is where the pages are going to be displayed
 		self.frameContentRightPanel = QFrame(self.frame_center)
-		self.frameContentRightPanel.setStyleSheet(u"background-color: rgb(44, 49, 60);")
+		self.frameContentRightPanel.setStyleSheet(u"background-color: #FFFFFF;")
 
 		self.verticalLayout_2 = QVBoxLayout(self.frameContentRightPanel)
 		self.verticalLayout_2.setSpacing(0)
@@ -953,8 +955,9 @@ class Ui_MainWindow(QMainWindow):
 		self.frame_div_content_1.setMaximumSize(QSize(16777215, 110))
 		self.frame_div_content_1.setStyleSheet(
 			"""
-			background-color: rgb(41, 45, 56);
+			background-color: #00d8cd;
 			border-radius: 5px;
+			color: #FFFFFF;
 			"""
 		)
 
@@ -965,16 +968,7 @@ class Ui_MainWindow(QMainWindow):
 		self.verticalLayout_7.setSpacing(0)
 		self.verticalLayout_7.setObjectName(u"verticalLayout_7")
 		self.verticalLayout_7.setContentsMargins(0, 0, 0, 0)
-		
-		self.frame_title_wid_1 = QFrame(self.frame_div_content_1)
-		self.frame_title_wid_1.setObjectName(u"frame_title_wid_1")
-		self.frame_title_wid_1.setMaximumSize(QSize(16777215, 35))
-		self.frame_title_wid_1.setStyleSheet(u"background-color: rgb(39, 44, 54);")
-		self.frame_title_wid_1.setFrameShape(QFrame.StyledPanel)
-		self.frame_title_wid_1.setFrameShadow(QFrame.Raised)
-		
-		self.verticalLayout_7.addWidget(self.frame_title_wid_1)
-		
+
 		self.frame_content_wid_1 = QFrame(self.frame_div_content_1)
 		self.frame_content_wid_1.setObjectName(u"frame_content_wid_1")
 		self.frame_content_wid_1.setFrameShape(QFrame.NoFrame)
@@ -1188,12 +1182,7 @@ class Ui_MainWindow(QMainWindow):
 		############# Simplot Frame
 		self.SimplotFrame = QFrame(self.resultsPage)
 		self.SimplotFrame.setMinimumSize(QSize(0, 150))
-		self.SimplotFrame.setStyleSheet(
-			"""
-			background-color: rgb(39, 44, 54);
-			border-radius: 5px;
-			"""
-		)
+		self.SimplotFrame.setStyleSheet(Style.style_results_frame)
 		self.SimplotFrame.setFrameShape(QFrame.StyledPanel)
 		self.SimplotFrame.setFrameShadow(QFrame.Raised)
 
@@ -1302,6 +1291,28 @@ class Style():
 	"""
 	Class to hold all the styling i need to do
 	"""
+	style_bt_menu_standard = (
+		"""
+	QPushButton {
+		background-image: ICON_REPLACE;
+		background-position: left center;
+		background-repeat: no-repeat;
+		border: none;
+		border-left: 28px solid #f89f0c;
+		background-color: #f89f0c;
+		text-align: left;
+		padding-left: 45px;
+	}
+	QPushButton:hover {
+		background-color: #f38300;
+		border-left: 28px solid #f38300;
+	}
+	QPushButton:pressed {
+		background-color: #f9b041;
+		border-left: 28px solid #f9b041;
+	}
+	"""
+	)
 	style_bt_standard = (
 	"""
 	QPushButton {
@@ -1309,29 +1320,19 @@ class Style():
 		background-position: left center;
 		background-repeat: no-repeat;
 		border: none;
-		border-left: 28px solid rgb(27, 29, 35);
-		background-color: rgb(27, 29, 35);
+		border-left: 28px solid #27d9ab;
+		background-color: #27d9ab;
 		text-align: left;
 		padding-left: 45px;
-	}
-	QPushButton[Active=true] {
-		background-image: ICON_REPLACE;
-		background-position: left center;
-		background-repeat: no-repeat;
-		border: none;
-		border-left: 28px solid rgb(27, 29, 35);
-		border-right: 5px solid rgb(44, 49, 60);
-		background-color: rgb(27, 29, 35);
-		text-align: left;
-		padding-left: 45px;
+		color: #FFFFFF
 	}
 	QPushButton:hover {
-		background-color: rgb(33, 37, 43);
-		border-left: 28px solid rgb(33, 37, 43);
+		background-color: #00c586;
+		border-left: 28px solid #00c586;
 	}
 	QPushButton:pressed {
-		background-color: rgb(85, 170, 255);
-		border-left: 28px solid rgb(85, 170, 255);
+		background-color: #80e3c3;
+		border-left: 28px solid #80e3c3;
 	}
 	"""
 	)
@@ -1347,24 +1348,13 @@ class Style():
 		text-align: left;
 		padding-left: 45px;
 	}
-	QPushButton[Active=true] {
-		background-image: ICON_REPLACE;
-		background-position: left center;
-		background-repeat: no-repeat;
-		border: none;
-		border-left: 28px solid #5B6481;
-		border-right: 5px solid #5B6481;
-		background-color: #5B6481;
-		text-align: left;
-		padding-left: 45px;
-	}
 	QPushButton:hover {
 		background-color: #486899;
 		border-left: 28px solid #486899;
 	}
 	QPushButton:pressed {
 		background-color: rgb(85, 170, 255);
-		border-left: 28px solid rgb(85, 170, 255);
+		border-left: 28px solid rgb(85, 170, 25
 	}
 	"""
 	)
@@ -1415,9 +1405,9 @@ class Style():
 	style_push_button = (
 		"""
 		QPushButton {
-			border: 2px solid rgb(52, 59, 72);
+			border: 2px solid #93baba;
 			border-radius: 5px;
-			background-color: rgb(52, 59, 72);
+			background-color: #93baba;
 		}
 		QPushButton:hover {
 			background-color: rgb(57, 65, 80);
@@ -1564,8 +1554,9 @@ class Style():
 	)
 	style_results_frame = (
 		"""
-		background-color: rgb(39, 44, 54);
+		background-color: #00d8cd;
 		border-radius: 5px;
+		color: #FFFFFF;
 		"""
 	)
 if __name__ == "__main__":

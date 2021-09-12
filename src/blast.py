@@ -4,8 +4,6 @@ import pathlib
 import numpy as np
 import pandas as pd
 from collections import Counter
-from Bio import SeqIO
-from Bio.Blast import NCBIXML
 from Bio.Blast.Applications import NcbiblastnCommandline, NcbimakeblastdbCommandline
 
 def blastn_search(exe_params: pd.DataFrame, query_f_path: pathlib.Path, 
@@ -104,19 +102,38 @@ def parse_GeneID_results(blastres_f_path: pathlib.Path,
 	df = df[df["Subject coverage"] >= 90.0]
 
 	kept_indeces = []
-	for seq in seqs:
-		tmpdf = df.loc[df["Query sequence"] == seq]
-		genes = np.unique(tmpdf["Gene"])
-		for gene in genes:
-			evalue = 1
-			geneDF = tmpdf[tmpdf["Gene"] == gene]
-			indeces = geneDF.index
-			for idx in indeces:
-				if tmpdf.loc[idx, "E-value"] < evalue:
-					evalue = tmpdf.loc[idx, "E-value"]
-					final_idx = idx
-			if tmpdf.loc[idx, "Subject coverage"] >= 90.0:
-				kept_indeces.append(final_idx)
+	kept_indeces = list(df.groupby(["Query sequence","Gene"]).agg({"E-value": lambda x: x.idxmin()})["E-value"].values)
+	# for seq in seqs:
+	# 	tmpdf = df.loc[df["Query sequence"] == seq]
+	# 	"""
+	# 	Pseucode for optimization
+	# 	tmpdict = tmpdf.to_dict()
+	# 	for gene in genes:
+	# 		tmpdf[gene]["Evalue"].min() -> idx
+	# 	final_idx = idx
+
+	# 	if cant do it with dict
+	# 		geneDF["Evalue"].min() -> idx
+	# 		final_dx = idx
+	# 		kept_indeces.append(idx)
+
+	# 	OR
+	# 	without loop
+	# 	t = df.groupby(["Query sequence","Gene"])["Evalue"].min()
+	# 	df.groupby(["Animal", "Gene"]).agg({'Index': lambda x: tuple(x)[0]}).reset_index()
+	# 	Needs work ! 
+	# 	"""
+	# 	genes = np.unique(tmpdf["Gene"])
+	# 	for gene in genes:
+	# 		evalue = 1
+	# 		geneDF = tmpdf[tmpdf["Gene"] == gene]
+	# 		indeces = geneDF.index
+	# 		for idx in indeces:
+	# 			if tmpdf.loc[idx, "E-value"] < evalue:
+	# 				evalue = tmpdf.loc[idx, "E-value"]
+	# 				final_idx = idx
+	# 		if tmpdf.loc[idx, "Subject coverage"] >= 90.0:
+	# 			kept_indeces.append(final_idx)
 	
 	df = df.loc[kept_indeces]
 	df.index = range(len(df))
@@ -139,9 +156,9 @@ def parse_GeneID_results(blastres_f_path: pathlib.Path,
 		"Perc. identity",
 		"E-value"
 	]]
-	kept_orgs = np.unique(df["Query sequence"])
+	# kept_orgs = np.unique(df["Query sequence"])
 	df.to_excel(geneID_results_path, index = False)
-	return geneID_results_path, kept_orgs
+	return geneID_results_path
 
 def parse_SNP_results(blastres_f_path: pathlib.Path, seqindex: dict,
 	exe:bool = True, cancer:bool = False

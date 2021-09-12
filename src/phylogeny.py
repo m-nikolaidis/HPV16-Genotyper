@@ -1,22 +1,29 @@
 import re
 import os
 import sys
-import copy
 import shlex
 import pathlib
 import logging
 import subprocess
-import multiprocessing
 import numpy as np
 import pandas as pd
 from Bio import SeqIO, AlignIO
 from Bio.Align.Applications import MuscleCommandline
 from multiprocessing.pool import ThreadPool
 
-def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path, 
-	geneid_blast_res_xls: pathlib.Path, muscle_bin: str, exe: bool = True
-) -> list:
+def _callMultiThreadProcc(cmd) -> tuple:
+			system = sys.platform
+			if "win" in system:
+				p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			else:
+				p = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			out, err = p.communicate()
+			return (out, err)
 
+def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path, 
+	geneid_blast_res_xls: pathlib.Path, muscle_bin: str, exe_threads: int,
+	exe: bool = True,
+) -> list:
 	if not exe:
 		batch_genes_dir = outdir / pathlib.Path(".tmp") /pathlib.Path("Gene_seqs")
 		aln_files = batch_genes_dir.glob("**/*")
@@ -72,7 +79,6 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 				# if discard == True:
 				# 	discarded_orgs[org] = ""
 				final_seqs[gene][org] = seq
-
 		return final_seqs		
 		# final_seqs_filt = copy.deepcopy(final_seqs)
 		# for gene in final_seqs:
@@ -82,27 +88,30 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 		
 		# return final_seqs_filt, discarded_orgs
 		
-	def _align_sequences(gene_files : list, muscle_bin : pathlib.Path,
-		method: str = "muscle"
+	def _align_sequences(gene_files : list, muscle_bin : str,
+		threads: int , method: str = "muscle"
 	) -> list:
 		"""
 		Align gene sequences to create profiles
 		input: gene_files, list of pathlib paths
 		return: list of pathlib paths pointing to each alignment file
 		"""
+		
 		aln_out_dir = outdir / pathlib.Path(".tmp") / pathlib.Path("Alignments")
 		aln_files = []
+		pool = ThreadPool(threads)
+		results = []
 		for f in gene_files:
 			fout = aln_out_dir / (f.stem + "_aln.fa")
 			if method == "muscle":
-				aln_cline = MuscleCommandline(cmd = muscle_bin, input=f, out=fout)
-			else:
-				aln_cline = None
-				raise Exception(" No other alignment method is implemented yet ")
-			aln_cline()
+				arguments = " -in " + str(f) + " -out " + str(fout)
+			results.append(pool.apply_async(_callMultiThreadProcc, (muscle_bin + arguments,)))
 			aln_files.append(fout)
+		pool.close()
+		pool.join()
 		return aln_files
 
+	logging.info(F"Creating the alignment files for each gene")
 	coords_df = pd.read_excel(geneid_blast_res_xls,engine="openpyxl") # Check for efficiency https://pandas.pydata.org/pandas-docs/stable/user_guide/scale.html
 	batch_genes_dir = outdir / pathlib.Path(".tmp") / pathlib.Path("Gene_seqs")
 	gene_files = []
@@ -116,7 +125,8 @@ def prepare_alns(outdir: pathlib.Path, query_f_path: pathlib.Path,
 			str_to_write = ">" + k + "\n" + str(gene_seqs[gene][k]) + "\n"
 			fhandle.write(str_to_write)
 		fhandle.close()
-	aln_files = _align_sequences(gene_files, muscle_bin)
+	aln_files = _align_sequences(gene_files, muscle_bin, threads = exe_threads)
+	logging.info(F"Finished aligning files")
 	return aln_files
 
 def profile_aln(outdir : pathlib.Path, aln_files : list, 
@@ -207,17 +217,6 @@ def build_trees(outdir: pathlib.Path, aln_files: list, phyml_bin: str,
 		m = re.match(nj_regex,text)
 		new_text = m.group(1)
 		tree_f.write_text(new_text)
-	
-	def callBioNJprocc(cmd) -> tuple:
-		""" This runs in a separate thread. """
-		#subprocess.call(shlex.split(cmd))  # This will block until cmd finishes
-		system = sys.platform
-		if "win" in system:
-			p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-		else:
-			p = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-		out, err = p.communicate()
-		return (out, err)
 
 	trees_dir = outdir / pathlib.Path("Phylogenetic_Trees")
 	alns_dir = aln_files[0].parent
@@ -242,7 +241,7 @@ def build_trees(outdir: pathlib.Path, aln_files: list, phyml_bin: str,
 			arguments = " -build_tree -NJ -distance " + dist \
 				+ " -replicates " + str(nj_bootstrap_repl) + " -o " \
 				+ str(tree_file_out) + " " + str(aln_f)
-			results.append(pool.apply_async(callBioNJprocc, (seaview_bin + arguments,)))
+			results.append(pool.apply_async(_callMultiThreadProcc, (seaview_bin + arguments,)))
 
 		pool.close()
 		pool.join()

@@ -5,7 +5,6 @@ import logging
 import pandas as pd
 import multiprocessing
 from Bio import SeqIO
-from Bio import SeqRecord
 # Tool modules
 import annot
 import blast
@@ -93,6 +92,7 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	env_setup.input_file_format(query_f_path)
 	env_setup.dir_priviledges(outdir)
 
+
 	# Filter input file
 	workflow = "HPV16 filter"
 	hpv16filt_results = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
@@ -102,18 +102,19 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	query_f_path = outdir / query_f
 	logging.info(F"param: query,{str(query_f_path)}")
 	query_f_index = SeqIO.index(str(query_f_path), "fasta")
+	
 	# BLASTn search
 	workflow = "gene identification"
 	geneid_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
-	geneid_blastn_res_path_xlsx, kept_orgs = blast.parse_GeneID_results(geneid_blastn_res_path,paramsdf, exe=exe)
+	geneid_blastn_res_path_xlsx = blast.parse_GeneID_results(geneid_blastn_res_path,paramsdf, exe=exe)
 
 	# Filter organisms that have many Ns inside genes
-	aln_files = phylogeny.prepare_alns(outdir, query_f_path, geneid_blastn_res_path_xlsx, muscle_bin, exe=exe)
-	records = [query_f_index[org] for org in query_f_index if org in kept_orgs]
-	with open(query_f_path, "w") as output_handle:
-		SeqIO.write(records, output_handle, "fasta")
-	output_handle.close()
-	query_f_index = SeqIO.index(str(query_f_path), "fasta")
+	aln_files = phylogeny.prepare_alns(outdir, query_f_path, geneid_blastn_res_path_xlsx, muscle_bin, exe_threads = threads, exe=exe)
+	# records = [query_f_index[org] for org in query_f_index if org in kept_orgs]
+	# with open(query_f_path, "w") as output_handle:
+	# 	SeqIO.write(records, output_handle, "fasta")
+	# output_handle.close()
+	# query_f_index = SeqIO.index(str(query_f_path), "fasta")
 	
 	# Continue with renewed fasta_file
 	workflow = "snp"

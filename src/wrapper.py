@@ -61,6 +61,7 @@ def _defaultparams() -> dict:
 
 def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	# Basic variables
+	hpv16error = False # To stop execution if no hpv16 sequences are found
 	outdir = pathlib.Path(paramsdf.loc["out","Value"])
 	env_setup.create_dirs(outdir, exist_ok=True)
 	system = paramsdf.loc["system","Value"]
@@ -79,6 +80,7 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	fhandler.setFormatter(formatter)
 	logger.addHandler(fhandler)
 	logger.setLevel(logging.DEBUG)
+	logging.info("#### DO NOT DELETE THIS FILE! ###")
 	logging.info(F"Environment set successfully in {outdir} \u2705")
 	logging.info("Parameters used in this run: ")
 	
@@ -97,6 +99,9 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	workflow = "HPV16 filter"
 	hpv16filt_results = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
 	hpv16_seqs = blast.identify_nonHPV16(hpv16filt_results)
+	if len(hpv16_seqs) == 0:
+		hpv16error = True
+		return query_f_path, hpv16error
 	query_f_filt = env_setup.filter_hpv16(query_f_path, hpv16_seqs, outdir)
 	query_f = query_f_filt # Posix | Windows Path
 	query_f_path = outdir / query_f
@@ -106,7 +111,7 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	# BLASTn search
 	workflow = "gene identification"
 	geneid_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
-	geneid_blastn_res_path_xlsx = blast.parse_GeneID_results(geneid_blastn_res_path,paramsdf, exe=exe)
+	geneid_blastn_res_path_xlsx, blastDF = blast.parse_GeneID_results(geneid_blastn_res_path,paramsdf, exe=exe)
 
 	# Filter organisms that have many Ns inside genes
 	aln_files = phylogeny.prepare_alns(outdir, query_f_path, geneid_blastn_res_path_xlsx, muscle_bin, exe_threads = threads, exe=exe)
@@ -119,12 +124,14 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	# Continue with renewed fasta_file
 	workflow = "snp"
 	snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
-	snp_blastn_res_path_xlsx = blast.parse_SNP_results(snp_blastn_res_path, query_f_index, exe=exe)
+	snp_blastn_res_path_xlsx, snpDF = blast.parse_SNP_results(snp_blastn_res_path, query_f_index, exe=exe)
 	workflow = "cancer"
 	C_snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
 	blast.parse_SNP_results(C_snp_blastn_res_path, query_f_index, exe=exe, cancer=True)
 	annot.annotate_results(annot_f,snp_blastn_res_path_xlsx,exe=exe)
 	
+	blast.find_recombinants(blastDF, snpDF, outdir)
+
 	# Gene alignments and trees
 	profiledb_dir = paramsdf.loc["GenesProfile_directory","Value"]
 	aln_files = phylogeny.profile_aln(outdir, aln_files, profiledb_dir, muscle_bin, exe = exe)

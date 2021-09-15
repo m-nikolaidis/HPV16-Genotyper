@@ -97,3 +97,8 @@ filename prefix (without the extension) and the current date
 # lineage snp graph
 This graph is showing the A,B,C,D specfic SNPs and the BCD specific
 So we can divide the A from the non-A
+
+# Recombinant identification
+Use the cut-offs to identify putative recombinants / artifacts in the analysis
+Gene identificatio cut-off: Atleast 1 gene with different main lineage
+Lineage specific SNPs: 3 or more SNPs other than the dominant lineage

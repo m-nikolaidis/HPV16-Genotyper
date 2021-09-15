@@ -1,4 +1,5 @@
 import re
+import os
 import logging
 import pathlib
 import numpy as np
@@ -96,52 +97,35 @@ def parse_GeneID_results(blastres_f_path: pathlib.Path,
 			 "Perc. identity", "Query coverage", "Query coverage hsp", "Subject length"
 	]
 	df = pd.read_csv(blastres_f_path, sep="\t",names = col_names)
-	seqs = np.unique(df["Query sequence"])
-	df["Gene"] = df["Subject sequence"].apply(lambda x: x.split("_")[2])	
 	df["Subject coverage"] = ((df["Subject end"] - df["Subject start"] + 1)/ df["Subject length"] ) * 100
 	df = df[df["Subject coverage"] >= 90.0]
-
-	kept_indeces = []
-	kept_indeces = list(df.groupby(["Query sequence","Gene"]).agg({"E-value": lambda x: x.idxmin()})["E-value"].values)
-	# for seq in seqs:
-	# 	tmpdf = df.loc[df["Query sequence"] == seq]
-	# 	"""
-	# 	Pseucode for optimization
-	# 	tmpdict = tmpdf.to_dict()
-	# 	for gene in genes:
-	# 		tmpdf[gene]["Evalue"].min() -> idx
-	# 	final_idx = idx
-
-	# 	if cant do it with dict
-	# 		geneDF["Evalue"].min() -> idx
-	# 		final_dx = idx
-	# 		kept_indeces.append(idx)
-
-	# 	OR
-	# 	without loop
-	# 	t = df.groupby(["Query sequence","Gene"])["Evalue"].min()
-	# 	df.groupby(["Animal", "Gene"]).agg({'Index': lambda x: tuple(x)[0]}).reset_index()
-	# 	Needs work ! 
-	# 	"""
-	# 	genes = np.unique(tmpdf["Gene"])
-	# 	for gene in genes:
-	# 		evalue = 1
-	# 		geneDF = tmpdf[tmpdf["Gene"] == gene]
-	# 		indeces = geneDF.index
-	# 		for idx in indeces:
-	# 			if tmpdf.loc[idx, "E-value"] < evalue:
-	# 				evalue = tmpdf.loc[idx, "E-value"]
-	# 				final_idx = idx
-	# 		if tmpdf.loc[idx, "Subject coverage"] >= 90.0:
-	# 			kept_indeces.append(final_idx)
+	df["Gene"] = df["Subject sequence"].apply(lambda x: x.split("_")[2])
+	df["Lineage"] = df["Subject sequence"].apply(lambda x: x.split("_")[0][0])
 	
-	df = df.loc[kept_indeces]
+	def _filterLineage(x):
+		tmpLineageList = list(np.unique(x.values))
+		concatLineages = "/".join(tmpLineageList)
+		return concatLineages
+
+	def _filterSublineage(x):
+		tmpSublineageList = list(np.unique(x.values))
+		tmpSublineageList = [org.split("_")[0] for org in tmpSublineageList]
+		concatSublineages = "/".join(tmpSublineageList)
+		return concatSublineages
+	
+	t = df.groupby(["Query sequence","Gene"])
+	idx = t["Bitscore"].transform(max) == df["Bitscore"]
+	df = df[idx]
+	t = df.groupby(["Query sequence","Gene"])
+	df["Lineage"] = t["Lineage"].transform(lambda x: _filterLineage(x))
+	df["Sublineage"] = t["Subject sequence"].transform(lambda x: _filterSublineage(x))
+	df["Subject sequence"] = t["Subject sequence"].transform(lambda x: _filterLineage(x))
+	df = df.drop_duplicates()	
+	
 	df.index = range(len(df))
 	df["Perc. identity"] = df["Perc. identity"].apply(lambda x: "{:0.2f}".format(x))
 	df["E-value"] = df["E-value"].apply(lambda x: F"{x:.2e}")
 	
-	df["Lineage"] = df["Subject sequence"].apply(lambda x: x.split("_")[0][0])
-	df["Sublineage"] = df["Subject sequence"].apply(lambda x: x.split("_")[0])
 	df = df[[
 		"Query sequence",
 		"Gene",
@@ -156,9 +140,8 @@ def parse_GeneID_results(blastres_f_path: pathlib.Path,
 		"Perc. identity",
 		"E-value"
 	]]
-	# kept_orgs = np.unique(df["Query sequence"])
 	df.to_excel(geneID_results_path, index = False)
-	return geneID_results_path
+	return geneID_results_path, df
 
 def parse_SNP_results(blastres_f_path: pathlib.Path, seqindex: dict,
 	exe:bool = True, cancer:bool = False
@@ -177,8 +160,7 @@ def parse_SNP_results(blastres_f_path: pathlib.Path, seqindex: dict,
 	
 	def _get_aln_nucl(qseq, qstart, sstart, probe_len) -> list:
 		"""
-		What is query aln?
-		TODO: Continue this
+		Return the query nucleotide that has hit the center of the probe
 		"""
 		# Round so in case of odd number, i get int
 		middle_pos = (round(probe_len/2) - sstart)
@@ -186,7 +168,6 @@ def parse_SNP_results(blastres_f_path: pathlib.Path, seqindex: dict,
 
 	probe_len = 31
 	probe_table_res = {}
-	
 	col_names = ["Query sequence", "Subject sequence", "Query start", "Query end",
 			 "Subject start", "Subject end", "E-value", "Bitscore", "Aln length", 
 			 "Perc. identity", "Query coverage", "Query coverage hsp", "Subject length"
@@ -244,26 +225,28 @@ def parse_SNP_results(blastres_f_path: pathlib.Path, seqindex: dict,
 		probedf = probedf[probedf_cols]
 		probedf.index.name = "Sequences"
 		probedf.to_excel(probe_results_path,na_rep="X")
-	return probe_results_path
+	return probe_results_path, probedf
 
-def find_recombinants(blastdf: pd.DataFrame, lineageSnpDf: pd.DataFrame) -> dict:
+def find_recombinants(blastdf: pd.DataFrame, lineageSnpDf: pd.DataFrame, 
+	outdir: pathlib.Path
+) -> dict:
 	"""
 	Use the cut-offs to identify putative recombinants / artifacts in the analysis
 	Gene identificatio cut-off: Atleast 1 gene with different main lineage
 	Lineage specific SNPs: 3 or more SNPs other than the dominant
-	
-	TODO: Think what will happen. If a lin_D has 2 consecutive LinB and 1 LinC
-	TODO: Write in MD all the above
 	"""
+	fout = outdir / "putativeRecombinants.txt"
 	recombStatus = {}
 	orgs = np.unique(blastdf["Query sequence"])
 	for org in orgs:
 		recombStatus[org] = {"geneID":0,"lSNP":0}
 		# Recombination by gene identification
-		tmpl = np.unique(blastdf[blastdf["Query sequence"] == org]["Lineage"].values)
-		if len(tmpl) > 1:
-			recombStatus[org]["geneID"] = 1
-		# Recombination by lineage specific SNPs
+		tmpdf = blastdf[blastdf["Query sequence"] == org]
+		tmplineages = Counter(tmpdf["Lineage"])
+		dom_lineage = max(tmplineages,key=lambda key: tmplineages[key])
+		for tmplineage in tmplineages:
+			if dom_lineage not in tmplineage:
+				recombStatus[org]["geneID"] = 1
 		tmpdf = lineageSnpDf[lineageSnpDf.index == org].tail(1).T.head(67) # lineageSnpDf["Index"] will become lineageSnpDf.index
 		tmplineages = dict(Counter(tmpdf[tmpdf.columns[0]].values))
 		dom_lineage = max(tmplineages,key=lambda key: tmplineages[key])
@@ -287,13 +270,13 @@ def find_recombinants(blastdf: pd.DataFrame, lineageSnpDf: pd.DataFrame) -> dict
 						if non_dom_consec >= 3:
 							recombStatus[org]["lSNP"] = 1
 					
-	recombinants = [org for org in recombStatus if recombStatus[org]["geneID"] != 0 or recombStatus[org]["lSNP"] != 0]
-	# TODO: Write this to ouput file, so i dont run it everytime i open results
-	return recombinants, recombStatus
+	recombinants = [org for org in recombStatus if recombStatus[org]["geneID"] != 0 and recombStatus[org]["lSNP"] != 0]
+	fout.write_text(os.linesep.join(recombinants))
+	
 
 def identify_nonHPV16(blastres_f_path: pathlib.Path) -> list:
 	"""
-	In Mirabello et al., 2018 at doi:10.3390/v10020080 it is reviewed that HPV types in the same species 
+	In Mirabello et al., 2018 doi:10.3390/v10020080 it is reviewed that HPV types in the same species 
 	(HPV16 vs 31; which are both Alphapapillomavirus-9 'are defined by difference of atleast 10% in L1 nucleotide sequence'
 	Also
 	within each of these HPV types there are variant lineages and sublineages with intratypic genome sequence differences of 1.0–10% and 0.5–1.0%,

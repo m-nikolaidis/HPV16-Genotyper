@@ -78,12 +78,14 @@ src/.vscode
 # Custom folders and files
 input
 ideas
+Script_out/*
 src/Script_out/*
-src/ete3
+src/resources
 config_files
 problematicCancerSNPs/*
 *.ai
 *.pdf
+Untracked/*
 
 # MS office and simple text
 *.docx

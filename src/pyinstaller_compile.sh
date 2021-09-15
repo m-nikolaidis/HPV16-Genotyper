@@ -1,6 +1,6 @@
-pyinstaller --distpath LinuxCompile \
+pyinstaller --distpath HPV16genotyper \
 	--workpath tmpBuild \
-	--name HPV16GenotypingTool \
+	--name  HPV16genotyper \
 	--add-data /media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/src/resources:resources/ \
 	--add-data /media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/src/annot.py:. \
 	--add-data /media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/src/blast.py:. \
@@ -14,5 +14,5 @@ pyinstaller --distpath LinuxCompile \
 	app.py;
 
 rm -r tmpBuild;
-rm *.pyo;
-rm *.spec;
+mv *.pyo HPV16genotyper/;
+mv *.spec HPV16genotyper/;

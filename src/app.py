@@ -75,9 +75,12 @@ class Worker(QObject):
 		if incident == "finished":
 			self.logW.setCentralWidget(self.logW.finishedWidget)
 
-	def runPipeline(self):
+	def runPipeline(self) -> None:
 		paramsdf = mainW.paramsdf
-		query_f_path =	wrapper.main(paramsdf)
+		query_f_path, hpv16error =	wrapper.main(paramsdf)
+		if hpv16error == True:
+			GuiFunctions.showError(self, "No HPV16 sequences were identified. Programme execution has been stopped.")
+			self.logW.close()
 		mainW.paramsdf.loc["query"] = query_f_path
 		self.finished.emit()		
 		return
@@ -278,9 +281,9 @@ class GuiFunctions(MainWindow):
 			self.ui.homeMenuVerticalLayout.addWidget(homeButton)
 			# self.homeButtons.append(homeButton)
 
-	def showError(self,text: str) -> None:
+	def showError(self,text: str, windowTitle: str = "Error") -> None:
 		errorMsg = QErrorMessage(parent = mainW)
-		errorMsg.setWindowTitle("Error")
+		errorMsg.setWindowTitle(windowTitle)
 		errorMsg.setWindowModality(Qt.WindowModal)
 		errorMsg.showMessage(text)
 		errorMsg.setFixedSize(QSize(500,200))
@@ -348,7 +351,9 @@ class GuiFunctions(MainWindow):
 						val = pathlib.Path(val)	
 					mainW.paramsdf.loc[index] = val
 			mainW.fasta_path = mainW.paramsdf.loc["query","Value"]
-
+			if mainW.outdir != mainW.fasta_path.parent:
+				mainW.paramsdf.loc["query","Value"] = mainW.outdir / mainW.fasta_path.name
+				mainW.fasta_path = mainW.paramsdf.loc["query","Value"]
 			mainW.totalSequenceRecDict = SeqIO.index(str(mainW.fasta_path),"fasta")
 			mainW.analyzedSeqs = list(mainW.totalSequenceRecDict.keys())
 			GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)
@@ -380,6 +385,7 @@ class GuiFunctions(MainWindow):
 		self.thread.start() # Step 6
 		self.worker.updateWidgets("starting")
 		self.thread.finished.connect(lambda: self.worker.updateWidgets("finished")) # Step 7
+		
 		self.thread.finished.connect(lambda: GuiFunctions.initVariables(self))
 		self.thread.finished.connect(lambda: GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)) # Step 7
 		self.thread.finished.connect(lambda: mainW.showMaximized())
@@ -390,7 +396,6 @@ class GuiFunctions(MainWindow):
 		# self is mainW
 		self.dfBlast = pd.read_excel(self.outdir / "GeneIdentification_results.xlsx", engine="openpyxl")
 		self.dfLineageSnp = pd.read_excel(self.outdir / "LineageSpecificSNPs.xlsx", engine="openpyxl", index_col=0)
-		self.putRecSeqs, self.recombinationStatus = blast.find_recombinants(self.dfBlast, self.dfLineageSnp)
 		self.dfCancerSnp = pd.read_excel(self.outdir / "cancerSNP_results.xlsx", engine="openpyxl")
 		self.dfGeneIdentification = pd.read_excel(self.outdir / "GeneIdentification_results.xlsx", engine="openpyxl", index_col=0)
 		self.fasta_path = self.paramsdf.loc["query", "Value"]
@@ -424,8 +429,8 @@ class GuiFunctions(MainWindow):
 			gene = m.group(1)
 			self.trees[gene] = Tree(str(t))
 		mainW.ui.translateResultsUI(self)
-
-		# TODO: List widget has wrong analyzed Seqs
+		self.putRecSeqs = GuiFunctions.loadRecList(self)
+		GuiFunctions.showError(self, F"{len(self.putRecSeqs)} putative recombinants have been found", "Information")
 		return
 
 	def updateListWidget(self) -> None:
@@ -519,9 +524,6 @@ class GuiFunctions(MainWindow):
 	def displayGraphs(self: QListWidgetItem) -> None:
 		mainW.ui.graphicsList = []
 		browsers = [mainW.ui.geneIDBrowser, mainW.ui.snpBrowser]
-		columns = ["Gene", "Lineage", "Sublineage", "Query start", "Query end", "Subject sequence", 
-			"Subject start","Subject end","Aln length","Perc. identity","E-value"
-		]
 		data = {"Gene":"", "Lineage" : "", "Sublineage" : "",
 			"Query start": 0, "Query end": 0, "Subject sequence": "", 
 			"Subject start": 0, "Subject end": 0, "Aln length": 0, "Perc. identity": 0, "E-value": 1.0}
@@ -530,15 +532,13 @@ class GuiFunctions(MainWindow):
 			if browserName == "geneIDBrowser":
 				tmpdf = mainW.dfGeneIdentification[mainW.dfGeneIdentification.index == mainW.selectedSeq]
 				tmpdf = tmpdf.sort_values("Query start")
-				tmpdf["Sublineage"] = tmpdf["Subject sequence"].apply(lambda x: x.split("_")[0])
-				# To add the missing genes in axis
 				idx = tmpdf.tail(1).index
 				for gene in mainW.ui.genes:
 					if gene not in tmpdf["Gene"].values:
 						geneDF = pd.DataFrame(index=idx, data = data)
 						geneDF["Gene"] = gene
 						tmpdf = pd.concat([tmpdf, geneDF])		
-				fig = px.scatter(tmpdf, x="Gene", y=tmpdf.index, size="Perc. identity", color="Lineage",text="Sublineage",
+				fig = px.scatter(tmpdf, x="Gene", y=tmpdf.index, size="Perc. identity", color="Lineage", # text="Sublineage",
 				hover_data=["Sublineage","Query start","Query end","Perc. identity"], 
 				color_discrete_map = mainW.geneIDColorDict, category_orders = {
 					"Gene":["E6", "E7", "E1", "E2", "E4", "E5", "L2", "L1"]
@@ -626,9 +626,9 @@ class GuiFunctions(MainWindow):
 		return
 
 	def updateLed(self) -> None:
-		if mainW.selectedSeq in mainW.recombinationStatus:
-			mainW.ui._blastLED.setValue(mainW.recombinationStatus[mainW.selectedSeq]["geneID"])
-			mainW.ui._lineageSnpLED.setValue(mainW.recombinationStatus[mainW.selectedSeq]["lSNP"])
+		if mainW.selectedSeq in mainW.putRecSeqs:
+			mainW.ui._blastLED.setValue(1)
+			mainW.ui._lineageSnpLED.setValue(1)
 		else:
 			mainW.ui._blastLED.setValue(0)
 			mainW.ui._lineageSnpLED.setValue(0)
@@ -662,6 +662,12 @@ class GuiFunctions(MainWindow):
 			fig.write_html(str(name),include_plotlyjs='cdn')
 		return
 
+	def loadRecList(self) -> list:
+		f = mainW.outdir / "putativeRecombinants.txt"
+		fin = open(str(f),"r")
+		recList = [line.rstrip() for line in fin.readlines()]
+		return recList
+
 class LogWindow(QMainWindow):
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -681,7 +687,7 @@ class LogWindow(QMainWindow):
 		self.pipelineWidget = QLabel("Executing pipeline... please wait")
 		self.pipelineWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 
-		self.finishedWidget = QLabel("Finished! \n Please don't delete the logfile\n You can safely close this window")
+		self.finishedWidget = QLabel("Finished! \n Please don't delete the (hidden) logfile.log \n You can safely close this window")
 		self.finishedWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 		
 		self.widgets = {
@@ -689,7 +695,6 @@ class LogWindow(QMainWindow):
 			"finishedWidget" : self.finishedWidget,
 			"progressWidget" : None
 		}
-		
 		mainW.openWindows["log"] = self
 		self.show()
 
@@ -698,6 +703,7 @@ class Simplot_page(QMainWindow):
 		super().__init__(parent)
 		self.setWindowTitle("Similarity plot")
 		self.resize(1000,1000)
+		self.setMinimumSize(QSize(1000,500))
 		self.setAutoFillBackground(True)
 		self.setStyleSheet("background: 'white'")
 		self.qseq = sequence
@@ -808,7 +814,7 @@ class Ui_MainWindow(QMainWindow):
 	def setupUi(self, MainWindow):
 		MainWindow.resize(1000, 720)
 		MainWindow.setMinimumSize(QSize(1000, 720))
-		MainWindow.setWindowTitle("HPV16 genotyping tool")
+		MainWindow.setWindowTitle("HPV16 genotyper")
 	   
 		# Fonts        
 		font1 = QFont("Segoe UI", pointSize= 12, weight= 75)
@@ -1234,7 +1240,7 @@ class Ui_MainWindow(QMainWindow):
 
 		self.SimplotVerticalLayout.addLayout(self.SimplotGridLayout)
 		
-		# Save graphics frame
+		# Save graphics and list frame
 		self.saveGraphicsFrame = QFrame(self.resultsPage)
 		self.saveGraphicsFrame.setMinimumSize(QSize(0,150))
 		self.saveGraphicsFrame.setStyleSheet(Style.style_results_frame)
@@ -1245,28 +1251,13 @@ class Ui_MainWindow(QMainWindow):
 		self.saveGraphicsFrameButton = QPushButton(self.saveGraphicsFrame)
 		self.saveGraphicsFrameButton.setMinimumSize(QSize(150,30))
 		self.saveGraphicsFrameButton.setFont(QFont("Segoe UI",9))
-		self.saveGraphicsFrameButton.setStyleSheet(
-			u"QPushButton {\n"
-			"	border: 2px solid rgb(52, 59, 72);\n"
-			"	border-radius: 5px;	\n"
-			"	background-color: rgb(52, 59, 72);\n"
-			"}\n"
-			"QPushButton:hover {\n"
-			"	background-color: rgb(57, 65, 80);\n"
-			"	border: 2px solid rgb(61, 70, 86);\n"
-			"}\n"
-			"QPushButton:pressed {	\n"
-			"	background-color: rgb(35, 40, 49);\n"
-			"	border: 2px solid rgb(43, 50, 61);\n"
-			"}"
-		)
+		self.saveGraphicsFrameButton.setStyleSheet(Style.style_push_button)
 		icon = QIcon()
 		icon.addFile("url(:/16x16/icons/16x16/cil-magnifying-glass.png)", QSize(), QIcon.Normal, QIcon.Off)
 		self.saveGraphicsFrameButton.setIcon(icon)
 		self.saveGraphicsFrameButton.setText("Save graphics")
 		self.saveGraphicsFrameButton.clicked.connect(GuiFunctions.saveGraphics)
 		self.saveGraphicsVBoxLayout.addWidget(self.saveGraphicsFrameButton)
-		
 		# Add frames
 		self.resultsPageGridLayoutForFrames.addWidget(self.listFrame,0,0,1,-1)
 		self.resultsPageGridLayoutForFrames.addWidget(self.cancerSnpFrame,1,0,2,-1)
@@ -1289,9 +1280,10 @@ class Ui_MainWindow(QMainWindow):
 		self.stackedWidget.setCurrentIndex(1)
 		QMetaObject.connectSlotsByName(MainWindow)
 
+
 	def retranslateUi(self, MainWindow):
 		self.pageNameInfo.setText(QCoreApplication.translate("MainWindow", f" Viewing - HOME", None))
-		self.toolLabel.setText(QCoreApplication.translate("MainWindow", "HPV-16 Genotyping Tool ", None))
+		self.toolLabel.setText(QCoreApplication.translate("MainWindow", "HPV-16 genotyper ", None))
 		self.menuLabel.setText(QCoreApplication.translate("MainWindow", "Please use the following menu", None))
 		self.orLabel.setText(QCoreApplication.translate("MainWindow", "OR", None))
 
@@ -1568,6 +1560,7 @@ class Style():
 		border-radius: 5px;
 		"""
 	)
+
 if __name__ == "__main__":
 	app = QApplication(sys.argv)
 	mainW = MainWindow()

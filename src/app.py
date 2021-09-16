@@ -2,14 +2,15 @@
 ## Basic GUI idea and core were incepted and created by: WANDERSON M.PIMENTA
 ## USING WITH: Qt Designer and PySide2
 ## V: 1.0.0
-## 
-## All the PySide2 API calls were rewritten in PyQt5 library
-## Further GUI changes (in this script) and all the other modules were
-## created by NIKOLAIDIS MARIOS
 ##
 ## There are limitations on Qt licenses if you want to use your products
 ## commercially, I recommend reading them on the official website:
 ## https://doc.qt.io/qtforpython/licenses.html
+##
+##
+## All the PySide2 API calls were rewritten in PyQt5 library
+## Further GUI changes (in this script) were made by NIKOLAIDIS MARIOS
+## All the CLI functions and analysis were created by NIKOLAIDIS MARIOS
 ################################################################################
 
 import os
@@ -39,7 +40,7 @@ from PyQt5.QtCore import (
 )
 from PyQt5.QtWidgets import (
 	QApplication, QLabel, QListWidgetItem, 
-	QMainWindow, QSpacerItem, QWidget, 
+	QMainWindow, QProgressBar, QSpacerItem, QWidget, 
 	QTableWidget, QTableWidgetItem, 
 	QFileDialog, QGridLayout, QVBoxLayout,
 	QPushButton, QHBoxLayout, QButtonGroup,
@@ -64,23 +65,28 @@ class Worker(QObject):
 	"""
 	def __init__(self, parent=None):
 		super().__init__(parent)
-		self.logW = LogWindow()
+		# self.logW = LogWindow()
+		GuiFunctions.addNewMenu(mainW, "Progress", "progressButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)
+		print(mainW.buttons)
+		mainW.buttons["Progress"].click()
+		GuiFunctions.makeHomeUnavailable(self)
 		
 	finished = pyqtSignal()
 
-	def updateWidgets(self, incident):
-		if incident == "starting":
-			self.logW.setCentralWidget(self.logW.pipelineWidget)
-		if incident == "finished":
-			self.logW.setCentralWidget(self.logW.finishedWidget)
+	# def updateWidgets(self, incident):
+	# 	if incident == "starting":
+	# 		self.logW.setCentralWidget(self.logW.pipelineWidget)
+	# 	if incident == "finished":
+	# 		self.logW.setCentralWidget(self.logW.finishedWidget)
 
 	def runPipeline(self) -> None:
+		
 		paramsdf = mainW.paramsdf
-		query_f_path, hpv16error =	wrapper.main(paramsdf)
-		if hpv16error == True:
-			GuiFunctions.showError(self, "No HPV16 sequences were identified. Programme execution has been stopped.")
-			self.logW.close()
-		mainW.paramsdf.loc["query"] = query_f_path
+		# query_f_path, hpv16error =	wrapper.main(paramsdf)
+		# if hpv16error == True:
+		# 	GuiFunctions.showError(self, "No HPV16 sequences were identified. Programme execution has been stopped.")
+		# 	self.logW.close()
+		# mainW.paramsdf.loc["query"] = query_f_path
 		self.finished.emit()		
 		return
 
@@ -126,6 +132,11 @@ class MainWindow(QMainWindow):
 			GuiFunctions.resetStyle(self, "homeButton")
 			GuiFunctions.updatePageLabel(self, "Home")
 			btnWidget.setStyleSheet(GuiFunctions.selectMenu(btnWidget.styleSheet()))
+		if btnWidget.objectName() == "progressButton":
+			self.ui.stackedWidget.setCurrentWidget(self.ui.progressPage)
+			GuiFunctions.resetStyle(self, "progressButton")
+			GuiFunctions.updatePageLabel(self, "Progress")
+			btnWidget.setStyleSheet(GuiFunctions.selectMenu(btnWidget.styleSheet()))
 		if btnWidget.objectName() == "resultsButton":
 			self.ui.stackedWidget.setCurrentWidget(self.ui.resultsPage)
 			GuiFunctions.resetStyle(self, "resultsButton")
@@ -142,7 +153,6 @@ class MainWindow(QMainWindow):
 		if btnWidget.objectName() == "openHelpButton":
 			pass
 			# GuiFunctions.showHelp(self)
-			# TODO: Implement
 	
 	def closeEvent(self, event):
 		self.quitMsg = QMessageBox()
@@ -232,20 +242,20 @@ class GuiFunctions(MainWindow):
 			homeButton.setToolTip(name)
 			homeButton.clicked.connect(self.Button)
 			if objName == "loadResultsButton":
-				self.ui.homeMenuVerticalLayout.addWidget(self.ui.orLabel)
+				self.ui.homeMenuGridLayout.addWidget(self.ui.orLabel)
 			if objName == "openHelpButton":
-				self.ui.homeMenuVerticalLayout.addItem(menuSpacer)
-			self.ui.homeMenuVerticalLayout.addWidget(homeButton)
+				self.ui.homeMenuGridLayout.addItem(menuSpacer)
+			self.ui.homeMenuGridLayout.addWidget(homeButton)
 			# self.homeButtons.append(homeButton)
 	
 	def enablePipeline(self):
 		# Delete all the existing widgets
-		for i in reversed(range(self.ui.homeMenuVerticalLayout.count())): 
-			if self.ui.homeMenuVerticalLayout.itemAt(i).widget() != None:
-				self.ui.homeMenuVerticalLayout.itemAt(i).widget().setParent(None)
+		for i in reversed(range(self.ui.homeMenuGridLayout.count())): 
+			if self.ui.homeMenuGridLayout.itemAt(i).widget() != None:
+				self.ui.homeMenuGridLayout.itemAt(i).widget().setParent(None)
 
-		self.ui.homeMenuVerticalLayout.addWidget(self.ui.toolLabel)
-		self.ui.homeMenuVerticalLayout.addWidget(self.ui.menuLabel)
+		self.ui.homeMenuGridLayout.addWidget(self.ui.toolLabel)
+		self.ui.homeMenuGridLayout.addWidget(self.ui.menuLabel)
 
 		self.homeButtonsObj = ["runPipelineButton", "selectOutdirButton" ,"loadResultsButton",
 		"openHelpButton"		
@@ -274,11 +284,14 @@ class GuiFunctions(MainWindow):
 			if objName == "runPipelineButton":
 				homeButton.setStyleSheet(Style.style_bt_highlight.replace('ICON_REPLACE', "url(:/16x16/icons/16x16/cil-home.png)"))
 			if objName == "loadResultsButton":
-				self.ui.homeMenuVerticalLayout.addWidget(self.ui.orLabel)
+				self.ui.homeMenuGridLayout.addWidget(self.ui.orLabel)
 			if objName == "openHelpButton":
-				self.ui.homeMenuVerticalLayout.addItem(menuSpacer)
-			self.ui.homeMenuVerticalLayout.addWidget(homeButton)
+				self.ui.homeMenuGridLayout.addItem(menuSpacer)
+			self.ui.homeMenuGridLayout.addWidget(homeButton)
 			# self.homeButtons.append(homeButton)
+
+	def makeHomeUnavailable(self):
+		pass
 
 	def showError(self,text: str, windowTitle: str = "Error") -> None:
 		errorMsg = QErrorMessage(parent = mainW)
@@ -376,19 +389,20 @@ class GuiFunctions(MainWindow):
 		self.thread = QThread() # Step 2
 		self.worker = Worker() # Step 3
 		self.worker.moveToThread(self.thread) # Step 4
+		
 		self.thread.started.connect(self.worker.runPipeline) # Step 5
 		# Create a new window for the progress
 		self.worker.finished.connect(self.thread.quit) # Step 5
 		self.worker.finished.connect(self.worker.deleteLater) # Step 5
 		self.thread.finished.connect(self.thread.deleteLater) # Step 5
 		self.thread.start() # Step 6
-		self.worker.updateWidgets("starting")
-		self.thread.finished.connect(lambda: self.worker.updateWidgets("finished")) # Step 7
+		# self.worker.updateWidgets("starting")
+		# self.thread.finished.connect(lambda: self.worker.updateWidgets("finished")) # Step 7
 		
-		self.thread.finished.connect(lambda: GuiFunctions.initVariables(self))
-		self.thread.finished.connect(lambda: GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)) # Step 7
-		self.thread.finished.connect(lambda: mainW.showMaximized())
-		self.thread.finished.connect(lambda: mainW.buttons["Results"].click())
+		# self.thread.finished.connect(lambda: GuiFunctions.initVariables(self))
+		# self.thread.finished.connect(lambda: GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)) # Step 7
+		# self.thread.finished.connect(lambda: mainW.showMaximized())
+		# self.thread.finished.connect(lambda: mainW.buttons["Results"].click())
 
 	##### Results page functions
 	def initVariables(self: QMainWindow) -> None:
@@ -418,18 +432,20 @@ class GuiFunctions(MainWindow):
 		}
 		
 		self.genes = ["E6", "E7", "E1", "E2", "E4", "E5", "L2", "L1"]
-		self.gene_name_regex = re.compile(r"^\S+_(\S+)_aln.+$")
+		self.gene_name_regex = re.compile(r"^\S+_([E|L]\d+)_aln.+$")
 		self.trees_dir = self.outdir/"Phylogenetic_Trees"
 		self.trees_l = os.listdir(self.trees_dir)
 		self.trees_l = [pathlib.Path(self.trees_dir) / t for t in self.trees_l]
 		if len(self.trees_l) == 0:
-			GuiFunctions.showError(self, "No nwk files have been found", "Information")
+			pass
+			# Throwing two errors makes the app crash
+			# Should be different threads
+			# GuiFunctions.showError(self, "No tree (newick) files have been found", "Information")
 		else:
 			self.trees = {}
 			for t in self.trees_l:
-				m = re.match(self.gene_name_regex, t.name)
-				gene = m.group(1)
-				self.trees[gene] = Tree(str(t))
+				self.trees[t.name.replace("_aln_NJ_tree.nwk","")] = Tree(str(t))
+			# TODO: Maybe optimize for memory?
 		mainW.ui.translateResultsUI(self)
 		self.putRecSeqs = GuiFunctions.loadRecList(self)
 		GuiFunctions.showError(self, F"{len(self.putRecSeqs)} putative recombinants have been found", "Information")
@@ -547,7 +563,6 @@ class GuiFunctions(MainWindow):
 					}
 				)
 				fig.update_layout(height=200, legend_y=1.5)
-				# fig.layout.modebar(remove=["lasso2d", "lasso", ])
 			if browserName == "lineageSnpBrowser":
 				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq]
 				tmpdf = tmpdf.T.head(67) # num of lineage specific snps
@@ -586,13 +601,13 @@ class GuiFunctions(MainWindow):
 		if hasattr(mainW, "selectedSeq") == False:
 			GuiFunctions.showError(self, F"Please select a sequence first")
 			return
-		if buttonId not in mainW.trees:
-			GuiFunctions.showError(self, "No tree files were loaded", "Error")
+		if mainW.selectedSeq + "_" + buttonId not in mainW.trees:
+			GuiFunctions.showError(self, F"Sequence {mainW.selectedSeq}\ndoes not have {buttonId} gene")
 			return
-		t = mainW.trees[buttonId]
+		t = mainW.trees[mainW.selectedSeq + "_" + buttonId]
 		t.ladderize(direction=1)
 		ts = TreeStyle()
-		ts.title.add_face(TextFace(buttonId + " Gene", fsize = 15),column=1)
+		ts.title.add_face(TextFace(buttonId + " Gene", fsize = 13), column = 1)
 
 		# Styling for certain clades
 		selectedSeqstyle = NodeStyle()
@@ -607,11 +622,6 @@ class GuiFunctions(MainWindow):
 		linCStyle["bgcolor"] = "Orange"
 		linDStyle = NodeStyle()
 		linDStyle["bgcolor"] = "FireBrick"
-		
-		selectedSeqNode = t.get_leaves_by_name(mainW.selectedSeq)
-		if selectedSeqNode == []:
-			GuiFunctions.showError(self, F"Sequence {mainW.selectedSeq}\ndoes not have {buttonId} gene")
-			return 
 		for leaf in t.iter_leaves():
 			if leaf.name == mainW.selectedSeq:
 				leaf.img_style = selectedSeqstyle
@@ -819,14 +829,15 @@ class Ui_MainWindow(QMainWindow):
 	def setupUi(self, MainWindow):
 		MainWindow.resize(1000, 720)
 		MainWindow.setMinimumSize(QSize(1000, 720))
-		MainWindow.setWindowTitle("HPV16 genotyper")
+		MainWindow.setWindowTitle("HPV-16 genotyper")
 	   
 		# Fonts        
-		font1 = QFont("Segoe UI", pointSize= 12, weight= 75)
-		font2 = QFont("Segoe UI", pointSize= 40)
-		font3 = QFont("Segoe UI", pointSize= 14)
-		font4 = QFont("Segoe UI", pointSize= 10, weight= 75)
-
+		self.font1 = QFont("Segoe UI", pointSize= 12, weight= 75)
+		self.font2 = QFont("Segoe UI", pointSize= 40)
+		self.font3 = QFont("Segoe UI", pointSize= 14)
+		self.font4 = QFont("Segoe UI", pointSize= 10, weight= 75)
+		self.font5 = QFont("Segoe UI", pointSize= 25)
+		
 		MainWindow.setStyleSheet(
 			"""
 			QMainWindow {background: transparent; }
@@ -865,7 +876,7 @@ class Ui_MainWindow(QMainWindow):
 		self.horizontalLayout_2 = QHBoxLayout(self.frame_top_info)
 
 		self.pageNameInfo = QLabel()
-		self.pageNameInfo.setFont(font1)
+		self.pageNameInfo.setFont(self.font1)
 		self.pageNameInfo.setStyleSheet(u"color: rgb(98, 103, 111);")
 
 		self.verticalLayout.addWidget(self.frame_top_info)
@@ -916,27 +927,73 @@ class Ui_MainWindow(QMainWindow):
 		
 		# Home page widget
 		self.homePage = QWidget()
-		self.homeMenuVerticalLayout = QVBoxLayout(self.homePage)
+		self.homeMenuGridLayout = QGridLayout(self.homePage)
 		self.toolLabel = QLabel(self.homePage)
 
-		self.toolLabel.setFont(font2)
+		self.toolLabel.setFont(self.font2)
 		# self.toolLabel.setStyleSheet(u"")
 		self.toolLabel.setAlignment(Qt.AlignCenter)
 
-		self.homeMenuVerticalLayout.addWidget(self.toolLabel)
+		self.homeMenuGridLayout.addWidget(self.toolLabel)
 
 		self.menuLabel = QLabel(self.homePage)
-		self.menuLabel.setFont(font3)
+		self.menuLabel.setFont(self.font3)
 		self.menuLabel.setAlignment(Qt.AlignCenter)
 
 		self.orLabel = QLabel(self.homePage)
-		self.orLabel.setFont(font3)
+		self.orLabel.setFont(self.font3)
 		self.orLabel.setAlignment(Qt.AlignCenter) # This label will be added later
 
-		self.homeMenuVerticalLayout.addWidget(self.menuLabel)
+		self.homeMenuGridLayout.addWidget(self.menuLabel)
 
 		self.verticalLayout_4.addWidget(self.stackedWidget)
 		self.verticalLayout_2.addWidget(self.frame_content)
+
+		# Progress page
+		self.progressPage = QWidget()
+		self.progressPage.setObjectName("progressPage")
+		
+		self.progressPageVboxLayout = QVBoxLayout(self.progressPage)
+		
+		self.progressPageGridLayout = QGridLayout()
+
+		self.progressLabel = QLabel(self.progressPage)
+		self.progressLabel.setText("Executing the pipeline")
+		self.progressLabel.setFont(self.font5)
+		self.toolLabel.setAlignment(Qt.AlignCenter)
+		spacer = QSpacerItem(20, 20)
+		self.progressPageGridLayout.addWidget(self.progressLabel)
+		self.progressPageGridLayout.addItem(spacer)
+		
+		self.statusLines = ["HPV-16 filtering", "Gene Identification", 
+			"Lineage specific SNPs scan", "cancer specific SNPs scan",
+			"Gene alignment", "Trees calculation"
+		]
+		
+		pos = 1
+		for status in self.statusLines:
+			print(status)
+			label = QLabel()
+			label.setText(status)
+			label.setFont(self.font3)
+			self.progressPageGridLayout.addWidget(label, pos, 0, 2, 1)
+			self.progressPageGridLayout.addItem(spacer)
+			pos += 1
+		
+		self.progressBars = []
+		pos = 1
+		for status in self.statusLines:
+			progressBar = QProgressBar()
+			progressBar.setMinimum = 0
+			progressBar.setMaximum = 100
+			progressBar.setValue(100)
+			progressBar.setStyleSheet(Style.style_progress_bar)
+			self.progressBars.append(progressBar)
+			self.progressPageGridLayout.addWidget(progressBar, pos, 1, 2, 1)
+			self.progressPageGridLayout.addItem(spacer)
+			pos += 1
+
+		self.progressPageVboxLayout.addLayout(self.progressPageGridLayout)
 
 		# Results page
 		self.resultsPage = QWidget()
@@ -1001,7 +1058,7 @@ class Ui_MainWindow(QMainWindow):
 		# Widgets
 		# 1. Label
 		self.listFrameLabel = QLabel(self.listFrame)
-		self.listFrameLabel.setFont(font4)
+		self.listFrameLabel.setFont(self.font4)
 		self.listFrameLabel.setText("Analyzed sequences")
 		# 2. Line edit
 		self.lineEdit = QLineEdit(self.frame_content_wid_1)
@@ -1047,7 +1104,7 @@ class Ui_MainWindow(QMainWindow):
 		# 1. Label
 		self.blastLabel = QLabel(self.blastResFrame)
 		self.blastLabel.setObjectName("blastLabel")
-		self.blastLabel.setFont(font4)
+		self.blastLabel.setFont(self.font4)
 		self.blastLabel.setText("Gene identification")
 		# 2. Table
 		self.blastResTable = QTableWidget(self.blastResFrame)
@@ -1086,7 +1143,7 @@ class Ui_MainWindow(QMainWindow):
 		# Widgets
 		# 1. Label
 		self.lineageSnpLabel = QLabel(self.lineageSnpFrame)
-		self.lineageSnpLabel.setFont(font4)
+		self.lineageSnpLabel.setFont(self.font4)
 		self.lineageSnpLabel.setText("Lineage specific SNPs")
 		# 2. Basic Table
 		self.lineageSnpTable = QTableWidget(self.lineageSnpFrame)
@@ -1108,7 +1165,7 @@ class Ui_MainWindow(QMainWindow):
 		self.lineageSumsTable.setStyleSheet(Style.style_table_standard)
 		# 5. Dominant lineage label
 		self.lineageSumsLabel = QLabel(self.lineageSnpFrame)
-		self.lineageSumsLabel.setFont(font4)
+		self.lineageSumsLabel.setFont(self.font4)
 		self.lineageSumsLabel.setText("Proportion of lineages")
 		# 6. Webengine view
 		self.snpBrowser = QWebEngineView()
@@ -1136,7 +1193,7 @@ class Ui_MainWindow(QMainWindow):
 		# Widgets
 		# 1. Label
 		self.cancnerSnpLabel = QLabel(self.cancerSnpFrame)
-		self.cancnerSnpLabel.setFont(font4)
+		self.cancnerSnpLabel.setFont(self.font4)
 		self.cancnerSnpLabel.setText("Increased cancer risk SNPs")
 		# 2. Table
 		self.cancerSnpTable = QTableWidget(self.cancerSnpFrame)
@@ -1176,7 +1233,7 @@ class Ui_MainWindow(QMainWindow):
 		# Widgets
 		# 1. Label
 		self.treeLabel = QLabel(self.treeFrame)
-		self.treeLabel.setFont(font4)
+		self.treeLabel.setFont(self.font4)
 		self.treeLabel.setText("Explore trees interactively")
 		# 2. Table
 		self.TreesRenderButtonGroup = QButtonGroup()
@@ -1215,7 +1272,7 @@ class Ui_MainWindow(QMainWindow):
 		# Widgets
 		# 1. Label
 		self.SimplotLabel = QLabel(self.SimplotFrame)
-		self.SimplotLabel.setFont(font4)
+		self.SimplotLabel.setFont(self.font4)
 		self.SimplotLabel.setText(" Create similarity plot ")
 		
 		# Simplot Widget
@@ -1275,6 +1332,7 @@ class Ui_MainWindow(QMainWindow):
 		# / Add the results page here
 		
 		self.stackedWidget.addWidget(self.homePage)
+		self.stackedWidget.addWidget(self.progressPage)
 		self.stackedWidget.addWidget(self.resultsPage)
 
 		# Necessary to display the UI correctly
@@ -1297,73 +1355,73 @@ class Ui_MainWindow(QMainWindow):
 
 class Style():
 	"""
-	Class to hold all the styling i need to do
+	Class to hold all the stylings
 	"""
 	style_bt_standard = (
-	"""
-	QPushButton {
-		background-image: ICON_REPLACE;
-		background-position: left center;
-		background-repeat: no-repeat;
-		border: none;
-		border-left: 28px solid rgb(27, 29, 35);
-		background-color: rgb(27, 29, 35);
-		text-align: left;
-		padding-left: 45px;
-	}
-	QPushButton[Active=true] {
-		background-image: ICON_REPLACE;
-		background-position: left center;
-		background-repeat: no-repeat;
-		border: none;
-		border-left: 28px solid rgb(27, 29, 35);
-		border-right: 5px solid rgb(44, 49, 60);
-		background-color: rgb(27, 29, 35);
-		text-align: left;
-		padding-left: 45px;
-	}
-	QPushButton:hover {
-		background-color: rgb(33, 37, 43);
-		border-left: 28px solid rgb(33, 37, 43);
-	}
-	QPushButton:pressed {
-		background-color: rgb(85, 170, 255);
-		border-left: 28px solid rgb(85, 170, 255);
-	}
-	"""
+		"""
+		QPushButton {
+			background-image: ICON_REPLACE;
+			background-position: left center;
+			background-repeat: no-repeat;
+			border: none;
+			border-left: 28px solid rgb(27, 29, 35);
+			background-color: rgb(27, 29, 35);
+			text-align: left;
+			padding-left: 45px;
+		}
+		QPushButton[Active=true] {
+			background-image: ICON_REPLACE;
+			background-position: left center;
+			background-repeat: no-repeat;
+			border: none;
+			border-left: 28px solid rgb(27, 29, 35);
+			border-right: 5px solid rgb(44, 49, 60);
+			background-color: rgb(27, 29, 35);
+			text-align: left;
+			padding-left: 45px;
+		}
+		QPushButton:hover {
+			background-color: rgb(33, 37, 43);
+			border-left: 28px solid rgb(33, 37, 43);
+		}
+		QPushButton:pressed {
+			background-color: rgb(85, 170, 255);
+			border-left: 28px solid rgb(85, 170, 255);
+		}
+		"""
 	)
 	style_bt_highlight = (
-	"""
-	QPushButton {
-		background-image: ICON_REPLACE;
-		background-position: left center;
-		background-repeat: no-repeat;
-		border: none;
-		border-left: 28px solid #3c57b0;
-		background-color: #3c57b0;
-		text-align: left;
-		padding-left: 45px;
-	}
-	QPushButton[Active=true] {
-		background-image: ICON_REPLACE;
-		background-position: left center;
-		background-repeat: no-repeat;
-		border: none;
-		border-left: 28px solid #5B6481;
-		border-right: 5px solid #5B6481;
-		background-color: #5B6481;
-		text-align: left;
-		padding-left: 45px;
-	}
-	QPushButton:hover {
-		background-color: #486899;
-		border-left: 28px solid #486899;
-	}
-	QPushButton:pressed {
-		background-color: rgb(85, 170, 255);
-		border-left: 28px solid rgb(85, 170, 255);
-	}
-	"""
+		"""
+		QPushButton {
+			background-image: ICON_REPLACE;
+			background-position: left center;
+			background-repeat: no-repeat;
+			border: none;
+			border-left: 28px solid #3c57b0;
+			background-color: #3c57b0;
+			text-align: left;
+			padding-left: 45px;
+		}
+		QPushButton[Active=true] {
+			background-image: ICON_REPLACE;
+			background-position: left center;
+			background-repeat: no-repeat;
+			border: none;
+			border-left: 28px solid #5B6481;
+			border-right: 5px solid #5B6481;
+			background-color: #5B6481;
+			text-align: left;
+			padding-left: 45px;
+		}
+		QPushButton:hover {
+			background-color: #486899;
+			border-left: 28px solid #486899;
+		}
+		QPushButton:pressed {
+			background-color: rgb(85, 170, 255);
+			border-left: 28px solid rgb(85, 170, 255);
+		}
+		"""
 	)
 	style_table_standard = ("""
 			QTableWidget {
@@ -1563,6 +1621,16 @@ class Style():
 		"""
 		background-color: rgb(39, 44, 54);
 		border-radius: 5px;
+		"""
+	)
+	style_progress_bar = (
+		"""
+		QProgressBar {
+			text-align: center;
+		}
+		QProgressBar::chunk {
+			background-color: rgb(85, 170, 255);
+		}
 		"""
 	)
 

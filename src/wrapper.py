@@ -22,16 +22,12 @@ def _init_binaries(system: sys.platform) -> list:
 		blastn_bin = pathlib.Path(__file__).parent / "resources" / "Win_bin" / "blastn.exe"
 		muscle_bin= pathlib.Path(__file__).parent / "resources" / "Win_bin" / "muscle3.8.31.exe"
 		seaview_bin = pathlib.Path(__file__).parent / "resources" / "Win_bin" / "seaview.exe"
-		phyml_bin = pathlib.Path(__file__).parent / "resources" / "Win_bin" / "PhyML-3.1_win32.exe"
 	if "linux" in system:
 		makeblastdb_bin = pathlib.Path(__file__).parent / "resources" / "Linux_bin" / "makeblastdb"
 		blastn_bin = pathlib.Path(__file__).parent / "resources" / "Linux_bin" / "blastn"
 		muscle_bin = pathlib.Path(__file__).parent / "resources" / "Linux_bin" / "muscle3.8.31_i86linux"
 		seaview_bin = pathlib.Path(__file__).parent / "resources" / "Linux_bin" / "seaview4"
-		phyml_bin = pathlib.Path(__file__).parent / "resources" / "Linux_bin" / "PhyML-3.1_linux64"
-	return [str(makeblastdb_bin), str(blastn_bin), str(muscle_bin), 
-			str(seaview_bin), str(phyml_bin)
-			]
+	return [str(makeblastdb_bin), str(blastn_bin), str(muscle_bin), str(seaview_bin)]
 
 def _defaultparams() -> dict:
 	system = sys.platform
@@ -68,7 +64,7 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	indir = pathlib.Path(paramsdf.loc["in","Value"])
 	query_f = pathlib.Path(paramsdf.loc["query","Value"])
 	query_f_path = indir / query_f
-	makeblastdb_bin,blastn_bin,muscle_bin,seaview_bin,phyml_bin = _init_binaries(system)
+	makeblastdb_bin, blastn_bin, muscle_bin, seaview_bin = _init_binaries(system)
 	annot_f = pathlib.Path(paramsdf.loc["SNP_annotation_file","Value"])
 	threads = paramsdf.loc["num_threads", "Value"]
 
@@ -112,8 +108,6 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	geneid_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
 	geneid_blastn_res_path_xlsx, blastDF = blast.parse_GeneID_results(geneid_blastn_res_path,paramsdf, exe=exe)
 
-	aln_files = phylogeny.prepare_alns(outdir, query_f_path, geneid_blastn_res_path_xlsx, muscle_bin, exe_threads = threads, exe=exe)
-
 	workflow = "snp"
 	snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
 	snp_blastn_res_path_xlsx, snpDF = blast.parse_SNP_results(snp_blastn_res_path, query_f_index, exe=exe)
@@ -125,13 +119,12 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 
 	# Gene alignments and trees
 	profiledb_dir = paramsdf.loc["GenesProfile_directory","Value"]
-	aln_files = phylogeny.profile_aln(outdir, aln_files, profiledb_dir, muscle_bin, exe = exe)
 	
-	organisms = len(query_f_index.keys()) # final seqs to analyze
-	if organisms > 10: 
-		method = "BioNJ" 
-	else: 
-		method = "PhyML"
-	phylogeny.build_trees(outdir, aln_files, phyml_bin, seaview_bin, threads = threads, exe=exe, method = method)
+	aln_files = phylogeny.prepare_alns(
+			outdir, query_f_path, geneid_blastn_res_path_xlsx, 
+			muscle_bin, profiledb_dir, exe_threads = threads,
+			exe=exe
+	)
+	phylogeny.build_trees(outdir, aln_files, seaview_bin, threads = threads, method = "BioNJ")
 
 	return query_f_path, hpv16error

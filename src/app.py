@@ -61,7 +61,6 @@ class Worker(QObject):
 	Step 4: Move worker to the thread
 	Step 5: Connect signals and slots
 	Step 6: Start the thread
-
 	"""
 	def __init__(self, parent=None):
 		super().__init__(parent)
@@ -417,17 +416,20 @@ class GuiFunctions(MainWindow):
 		"Lin_BCD":"#ebeb34",
 		"Other":"#ffffff"
 		}
-		self.trees_dir = self.outdir/"Phylogenetic_Trees"
-		trees = os.listdir(self.trees_dir)
-		trees = [pathlib.Path(self.trees_dir) / t for t in trees]
+		
 		self.genes = ["E6", "E7", "E1", "E2", "E4", "E5", "L2", "L1"]
 		self.gene_name_regex = re.compile(r"^\S+_(\S+)_aln.+$")
-		self.trees_l = trees
-		self.trees = {}
-		for t in self.trees_l:
-			m = re.match(self.gene_name_regex, t.name)
-			gene = m.group(1)
-			self.trees[gene] = Tree(str(t))
+		self.trees_dir = self.outdir/"Phylogenetic_Trees"
+		self.trees_l = os.listdir(self.trees_dir)
+		self.trees_l = [pathlib.Path(self.trees_dir) / t for t in self.trees_l]
+		if len(self.trees_l) == 0:
+			GuiFunctions.showError(self, "No nwk files have been found", "Information")
+		else:
+			self.trees = {}
+			for t in self.trees_l:
+				m = re.match(self.gene_name_regex, t.name)
+				gene = m.group(1)
+				self.trees[gene] = Tree(str(t))
 		mainW.ui.translateResultsUI(self)
 		self.putRecSeqs = GuiFunctions.loadRecList(self)
 		GuiFunctions.showError(self, F"{len(self.putRecSeqs)} putative recombinants have been found", "Information")
@@ -583,7 +585,10 @@ class GuiFunctions(MainWindow):
 		buttonId = mainW.ui.TreesRenderButtonGroup.button(self).text()
 		if hasattr(mainW, "selectedSeq") == False:
 			GuiFunctions.showError(self, F"Please select a sequence first")
-			return 
+			return
+		if buttonId not in mainW.trees:
+			GuiFunctions.showError(self, "No tree files were loaded", "Error")
+			return
 		t = mainW.trees[buttonId]
 		t.ladderize(direction=1)
 		ts = TreeStyle()

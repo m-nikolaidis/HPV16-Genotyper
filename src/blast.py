@@ -250,6 +250,8 @@ def find_recombinants(blastdf: pd.DataFrame, lineageSnpDf: pd.DataFrame,
 		tmpdf = lineageSnpDf[lineageSnpDf.index == org].tail(1).T.head(67) # lineageSnpDf["Index"] will become lineageSnpDf.index
 		tmplineages = dict(Counter(tmpdf[tmpdf.columns[0]].values))
 		dom_lineage = max(tmplineages,key=lambda key: tmplineages[key])
+		if dom_lineage == "Other":
+			continue
 		indeces = tmpdf.index
 		non_dom_consec = 0
 		for idx in indeces:
@@ -262,14 +264,10 @@ def find_recombinants(blastdf: pd.DataFrame, lineageSnpDf: pd.DataFrame,
 					if non_dom_consec >= 3:
 						recombStatus[org]["lSNP"] = 1	
 			else:
-				if dom_lineage == "Other":
-					continue
-				else:
-					if val == "Lin_A" and val != "Other":
-						non_dom_consec += 1
-						if non_dom_consec >= 3:
-							recombStatus[org]["lSNP"] = 1
-					
+				if val == "Lin_A" and val != "Other":
+					non_dom_consec += 1
+					if non_dom_consec >= 3:
+						recombStatus[org]["lSNP"] = 1
 	recombinants = [org for org in recombStatus if recombStatus[org]["geneID"] != 0 and recombStatus[org]["lSNP"] != 0]
 	fout.write_text(os.linesep.join(recombinants))
 	

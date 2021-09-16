@@ -94,7 +94,6 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	env_setup.input_file_format(query_f_path)
 	env_setup.dir_priviledges(outdir)
 
-
 	# Filter input file
 	workflow = "HPV16 filter"
 	hpv16filt_results = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
@@ -113,24 +112,16 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 	geneid_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
 	geneid_blastn_res_path_xlsx, blastDF = blast.parse_GeneID_results(geneid_blastn_res_path,paramsdf, exe=exe)
 
-	# Filter organisms that have many Ns inside genes
 	aln_files = phylogeny.prepare_alns(outdir, query_f_path, geneid_blastn_res_path_xlsx, muscle_bin, exe_threads = threads, exe=exe)
-	# records = [query_f_index[org] for org in query_f_index if org in kept_orgs]
-	# with open(query_f_path, "w") as output_handle:
-	# 	SeqIO.write(records, output_handle, "fasta")
-	# output_handle.close()
-	# query_f_index = SeqIO.index(str(query_f_path), "fasta")
-	
-	# Continue with renewed fasta_file
+
 	workflow = "snp"
 	snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
 	snp_blastn_res_path_xlsx, snpDF = blast.parse_SNP_results(snp_blastn_res_path, query_f_index, exe=exe)
+	_, snpDFannot = annot.annotate_results(annot_f,snp_blastn_res_path_xlsx,exe=exe)
 	workflow = "cancer"
 	C_snp_blastn_res_path = blast.blastn_search(paramsdf, query_f_path, workflow, makeblastdb_bin, blastn_bin, exe=exe)
 	blast.parse_SNP_results(C_snp_blastn_res_path, query_f_index, exe=exe, cancer=True)
-	annot.annotate_results(annot_f,snp_blastn_res_path_xlsx,exe=exe)
-	
-	blast.find_recombinants(blastDF, snpDF, outdir)
+	blast.find_recombinants(blastDF, snpDFannot, outdir)
 
 	# Gene alignments and trees
 	profiledb_dir = paramsdf.loc["GenesProfile_directory","Value"]
@@ -143,4 +134,4 @@ def main(paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
 		method = "PhyML"
 	phylogeny.build_trees(outdir, aln_files, phyml_bin, seaview_bin, threads = threads, exe=exe, method = method)
 
-	return query_f_path
+	return query_f_path, hpv16error

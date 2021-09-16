@@ -98,4 +98,4 @@ def annotate_results(annot_f: pathlib.Path,probe_res: pathlib.Path,
 	tmpdf.index.name = "Index"
 	tmpdf.fillna("X",inplace=True)
 	tmpdf.to_excel(probe_res, engine=xl_engine)
-	return num_snps
+	return num_snps, tmpdf

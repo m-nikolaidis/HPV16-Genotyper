@@ -16,7 +16,6 @@
 import os
 import re
 import sys
-import blast # Tool module
 import wrapper # Tool module
 import simplot # Tool module
 import pathlib
@@ -36,7 +35,7 @@ from PyQt5.QtGui import (
 from PyQt5.QtCore import ( 
 	Qt, QObject, QThread, pyqtSignal, 
 	QUrl, QCoreApplication, QSize,
-	QMetaObject	
+	QMetaObject, QTimer
 )
 from PyQt5.QtWidgets import (
 	QApplication, QLabel, QListWidgetItem, 
@@ -63,29 +62,34 @@ class Worker(QObject):
 	Step 5: Connect signals and slots
 	Step 6: Start the thread
 	"""
+	finished = pyqtSignal()
 	def __init__(self, parent=None):
 		super().__init__(parent)
 		# self.logW = LogWindow()
 		GuiFunctions.addNewMenu(mainW, "Progress", "progressButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)
-		print(mainW.buttons)
 		mainW.buttons["Progress"].click()
-		GuiFunctions.makeHomeUnavailable(self)
-		
-	finished = pyqtSignal()
-
-	# def updateWidgets(self, incident):
-	# 	if incident == "starting":
-	# 		self.logW.setCentralWidget(self.logW.pipelineWidget)
-	# 	if incident == "finished":
-	# 		self.logW.setCentralWidget(self.logW.finishedWidget)
+		mainW.buttons["Main Page"].setEnabled(False)
+		# TOOD: Also change the style, to resemble something unavailable
+	
+	def runPipelineNew(self) -> None:
+		paramsdf = mainW.paramsdf
+		# mainW.cliMainFunctions.pBarIdxSignal.connect(GuiFunctions.selectCurrentPBar)
+		# mainW.cliMainFunctions.pBarIdxSignal.connect(lambda: print("Got the signal"))
+		# mainW.cliMainFunctions.countSignal.connect(GuiFunctions.updateProgress)
+		# TODO: Delete if resolved
+		query_f_path, hpv16error = mainW.cliMainFunctions.main(paramsdf)
+		if hpv16error == True:
+			GuiFunctions.showError(self, "No HPV16 sequences were identified. Programme execution has been stopped.")
+		mainW.paramsdf.loc["query"] = query_f_path
+		self.finished.emit()
+		return
 
 	def runPipeline(self) -> None:
-		
 		paramsdf = mainW.paramsdf
-		# query_f_path, hpv16error =	wrapper.main(paramsdf)
+		query_f_path, hpv16error = wrapper.main(paramsdf)
 		# if hpv16error == True:
 		# 	GuiFunctions.showError(self, "No HPV16 sequences were identified. Programme execution has been stopped.")
-		# 	self.logW.close()
+		# # 	self.logW.close()
 		# mainW.paramsdf.loc["query"] = query_f_path
 		self.finished.emit()		
 		return
@@ -119,6 +123,15 @@ class MainWindow(QMainWindow):
 		self.paramsdf.rename(columns={0:"Value"},inplace=True)
 		self.binaries = wrapper._init_binaries(sys.platform) # Init some necessary params
 		self.openWindows = {}
+
+		# BlastTimer to update the blast progressBars
+		self.cliMainFunctions = wrapper.MainFunctions()
+		self.blastTimer = QTimer()
+		self.blastTimer.timeout.connect(lambda: wrapper.MainFunctions.blastProgress(self.cliMainFunctions))
+		self.cliMainFunctions.startTimerSignal.connect(lambda: self.blastTimer.start(1000))
+		self.cliMainFunctions.stopTimerSignal.connect(lambda: self.blastTimer.stop())
+		self.cliMainFunctions.pBarIdxSignal.connect(GuiFunctions.selectCurrentPBar)
+		self.cliMainFunctions.countSignal.connect(GuiFunctions.updateProgress)
 		self.show()
 
 	def Button(self):
@@ -126,7 +139,6 @@ class MainWindow(QMainWindow):
 		Choose what happens once i click any button
 		"""
 		btnWidget = self.sender()
-
 		if btnWidget.objectName() == "homeButton":
 			self.ui.stackedWidget.setCurrentWidget(self.ui.homePage)
 			GuiFunctions.resetStyle(self, "homeButton")
@@ -163,8 +175,9 @@ class MainWindow(QMainWindow):
 		if reply == QMessageBox.Yes:
 			event.accept()
 			logging.shutdown()
-			for w in mainW.openWindows:
-				mainW.openWindows[w].close()
+			if list(mainW.openWindows.keys()) != []:
+				for w in mainW.openWindows:
+					mainW.openWindows[w].close()
 		else:
 			event.ignore()
 
@@ -224,7 +237,6 @@ class GuiFunctions(MainWindow):
 		self.homeButtonNames = ["Load the fasta file to analyze", "Select directory to write the output",
 		"Load results", "View help videos  (Opens a separate window)"
 		]
-		# self.homeButtons = []
 		indeces = range(len(self.homeButtonsObj))
 		menuSpacer = QSpacerItem(20, 20)
 		for idx in indeces:
@@ -246,7 +258,6 @@ class GuiFunctions(MainWindow):
 			if objName == "openHelpButton":
 				self.ui.homeMenuGridLayout.addItem(menuSpacer)
 			self.ui.homeMenuGridLayout.addWidget(homeButton)
-			# self.homeButtons.append(homeButton)
 	
 	def enablePipeline(self):
 		# Delete all the existing widgets
@@ -288,10 +299,12 @@ class GuiFunctions(MainWindow):
 			if objName == "openHelpButton":
 				self.ui.homeMenuGridLayout.addItem(menuSpacer)
 			self.ui.homeMenuGridLayout.addWidget(homeButton)
-			# self.homeButtons.append(homeButton)
 
-	def makeHomeUnavailable(self):
-		pass
+	def selectCurrentPBar(pBarIdx):
+		mainW.ui.currentProgressBar = mainW.ui.progressBars[pBarIdx]
+	
+	def updateProgress(val):
+		mainW.ui.currentProgressBar.setValue(val)
 
 	def showError(self,text: str, windowTitle: str = "Error") -> None:
 		errorMsg = QErrorMessage(parent = mainW)
@@ -390,19 +403,17 @@ class GuiFunctions(MainWindow):
 		self.worker = Worker() # Step 3
 		self.worker.moveToThread(self.thread) # Step 4
 		
-		self.thread.started.connect(self.worker.runPipeline) # Step 5
+		self.thread.started.connect(self.worker.runPipelineNew) # Step 5
+
 		# Create a new window for the progress
 		self.worker.finished.connect(self.thread.quit) # Step 5
 		self.worker.finished.connect(self.worker.deleteLater) # Step 5
 		self.thread.finished.connect(self.thread.deleteLater) # Step 5
 		self.thread.start() # Step 6
-		# self.worker.updateWidgets("starting")
-		# self.thread.finished.connect(lambda: self.worker.updateWidgets("finished")) # Step 7
-		
-		# self.thread.finished.connect(lambda: GuiFunctions.initVariables(self))
-		# self.thread.finished.connect(lambda: GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)) # Step 7
-		# self.thread.finished.connect(lambda: mainW.showMaximized())
-		# self.thread.finished.connect(lambda: mainW.buttons["Results"].click())
+		self.thread.finished.connect(lambda: GuiFunctions.initVariables(self))
+		self.thread.finished.connect(lambda: GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)) # Step 7
+		self.thread.finished.connect(lambda: mainW.showMaximized())
+		self.thread.finished.connect(lambda: mainW.buttons["Results"].click())
 
 	##### Results page functions
 	def initVariables(self: QMainWindow) -> None:
@@ -831,7 +842,7 @@ class Ui_MainWindow(QMainWindow):
 		MainWindow.setMinimumSize(QSize(1000, 720))
 		MainWindow.setWindowTitle("HPV-16 genotyper")
 	   
-		# Fonts        
+		# Fonts
 		self.font1 = QFont("Segoe UI", pointSize= 12, weight= 75)
 		self.font2 = QFont("Segoe UI", pointSize= 40)
 		self.font3 = QFont("Segoe UI", pointSize= 14)
@@ -931,7 +942,6 @@ class Ui_MainWindow(QMainWindow):
 		self.toolLabel = QLabel(self.homePage)
 
 		self.toolLabel.setFont(self.font2)
-		# self.toolLabel.setStyleSheet(u"")
 		self.toolLabel.setAlignment(Qt.AlignCenter)
 
 		self.homeMenuGridLayout.addWidget(self.toolLabel)
@@ -972,12 +982,10 @@ class Ui_MainWindow(QMainWindow):
 		
 		pos = 1
 		for status in self.statusLines:
-			print(status)
 			label = QLabel()
 			label.setText(status)
 			label.setFont(self.font3)
 			self.progressPageGridLayout.addWidget(label, pos, 0, 2, 1)
-			self.progressPageGridLayout.addItem(spacer)
 			pos += 1
 		
 		self.progressBars = []
@@ -986,11 +994,11 @@ class Ui_MainWindow(QMainWindow):
 			progressBar = QProgressBar()
 			progressBar.setMinimum = 0
 			progressBar.setMaximum = 100
-			progressBar.setValue(100)
+			progressBar.setValue(0)
 			progressBar.setStyleSheet(Style.style_progress_bar)
+			progressBar.setObjectName(status)
 			self.progressBars.append(progressBar)
 			self.progressPageGridLayout.addWidget(progressBar, pos, 1, 2, 1)
-			self.progressPageGridLayout.addItem(spacer)
 			pos += 1
 
 		self.progressPageVboxLayout.addLayout(self.progressPageGridLayout)
@@ -1633,6 +1641,7 @@ class Style():
 		}
 		"""
 	)
+
 
 if __name__ == "__main__":
 	app = QApplication(sys.argv)

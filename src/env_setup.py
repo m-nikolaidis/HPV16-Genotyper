@@ -4,10 +4,32 @@ import pathlib
 import logging
 from Bio import SeqIO
 
-def create_dirs(outdir, exist_ok = False):
+import sys
+def _sort_alphanumeric(iteratable: list) -> list:
+		int_convert = lambda text: int(text) if text.isdigit() else text 
+		sorting_key = lambda key: [ int_convert(c) for c in re.split('([0-9]+)', key) ] 
+		return sorted(iteratable, key = sorting_key)
+
+def create_dirs(outdir : pathlib.Path, exist_ok: bool = True) -> pathlib.Path:
 		"""
 		Perform the necessary actions to set up the script working environment
 		"""
+		if re.match(r".+_run\d$",outdir.name):
+			if outdir.exists() == True:
+				tmpname = outdir.name.split("_run")[0]
+				parent = outdir.parent
+				outdirs = os.listdir(outdir.parent) # With same name
+				outdirs = [newdir for newdir in outdirs if tmpname in newdir]
+				outdirs = _sort_alphanumeric(outdirs)
+				outdir  = outdirs[-1]
+				outdir = pathlib.Path(outdir)
+				if len(outdirs) >= 1:
+					dirname = outdir.name
+					tmp = dirname.split("_run")
+					newrun = int(tmp[1]) + 1
+					newname = "".join([tmp[0], "_run", str(newrun)])
+				outdir = parent / newname
+
 		script_out = outdir
 		tmp_out = script_out / pathlib.Path(".tmp")
 		tmp_genes_out = tmp_out / pathlib.Path("Gene_seqs") # Gene files of batch size
@@ -27,6 +49,7 @@ def create_dirs(outdir, exist_ok = False):
 		graphics_out.mkdir(exist_ok = exist_ok)
 		gene_sim_graphics.mkdir(exist_ok = exist_ok)
 		snp_graphics.mkdir(exist_ok = exist_ok)
+		return script_out
 
 def file_exists(f: pathlib.Path) -> str or None:
 	exist = os.path.exists(f)
@@ -34,7 +57,7 @@ def file_exists(f: pathlib.Path) -> str or None:
 		logging.critical(F"{f} does not exist")
 		msg = F" {f} does not exist"
 		return msg
-	logging.info(F"{f} exists \u2705")
+	logging.info(F"{f} exists")
 
 def input_file_format(fasta_file_path: pathlib.Path) -> str:
 	# TODO: Add the error message to the GUI
@@ -60,7 +83,7 @@ def input_file_format(fasta_file_path: pathlib.Path) -> str:
 		logging.critical("The input file is not in plain text file format ")
 		msg = " The input file is not in plain text file format "
 		return msg
-	logging.info(F"Finished input file integrity check successfully \u2705")
+	logging.info(F"Finished input file integrity check successfully")
 
 def dir_priviledges(path):
 	"""
@@ -69,9 +92,9 @@ def dir_priviledges(path):
 	"""
 	write_priviledges = os.access(path, os.W_OK)
 	if not write_priviledges:
-		logging.critical(F"Program has no write permission on {path} \u274C")
+		logging.critical(F"Program has no write permission on {path}")
 		raise PermissionError(" You dont have the required priviledges in the specified output directory ")
-	logging.info(F"Have permission to write on {path} \u2705")
+	logging.info(F"Have permission to write on {path}")
 
 
 def filter_hpv16(fasta_file_path: pathlib.Path, seqs_to_include: list, outdir: pathlib.Path) -> str:

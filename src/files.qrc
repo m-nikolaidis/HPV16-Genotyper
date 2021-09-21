@@ -1,6 +1,15 @@
 <RCC>
-  <qresource prefix="16x16">
-    <file>resources/icons/cil-x-circle.png</file>
-    <file>resources/icons/cil-zoom-in.png</file>
+  <qresource>
+    <file>resources/icons/cil-home.png</file>
+    <file>resources/icons/cil-magnifying-glass.png</file>
+    <file>resources/cSNPinfo/NC001526_NuclPos_145.md</file>
+    <file>resources/cSNPinfo/NC001526_NuclPos_2860.md</file>
+    <file>resources/cSNPinfo/NC001526_NuclPos_335.md</file>
+    <file>resources/cSNPinfo/NC001526_NuclPos_3410.md</file>
+    <file>resources/cSNPinfo/NC001526_NuclPos_350.md</file>
+    <file>resources/cSNPinfo/NC001526_NuclPos_3684.md</file>
+    <file>resources/cSNPinfo/NC001526_NuclPos_4042.md</file>
+    <file>resources/cSNPinfo/NC001526_NuclPos_647.md</file>
+    <file>resources/cSNPinfo/NC001526_NuclPos_749.md</file>
   </qresource>
 </RCC>

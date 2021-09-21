@@ -16,12 +16,12 @@
 import os
 import re
 import sys
+import ctypes
 import wrapper # Tool module
 import simplot # Tool module
 import pathlib
 import logging
 import files_rc
-import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 import plotly.express as px
@@ -66,32 +66,25 @@ class Worker(QObject):
 	def __init__(self, parent=None):
 		super().__init__(parent)
 		# self.logW = LogWindow()
-		GuiFunctions.addNewMenu(mainW, "Progress", "progressButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)
+		GuiFunctions.addNewMenu(mainW, "Progress", "progressButton", "url(:/resources/icons/cil-magnifying-glass.png)", True)
 		mainW.buttons["Progress"].click()
 		mainW.buttons["Main Page"].setEnabled(False)
-		# TOOD: Also change the style, to resemble something unavailable
+		mainW.buttons["Main Page"].setStyleSheet(Style.style_home_bt_unavailable.replace('ICON_REPLACE', "url(:/resources/icons/cil-home.png)"))
+		# TODO: Also change the style, to resemble something unavailable
 	
-	def runPipelineNew(self) -> None:
-		paramsdf = mainW.paramsdf
-		# mainW.cliMainFunctions.pBarIdxSignal.connect(GuiFunctions.selectCurrentPBar)
-		# mainW.cliMainFunctions.pBarIdxSignal.connect(lambda: print("Got the signal"))
-		# mainW.cliMainFunctions.countSignal.connect(GuiFunctions.updateProgress)
-		# TODO: Delete if resolved
-		query_f_path, hpv16error = mainW.cliMainFunctions.main(paramsdf)
-		if hpv16error == True:
-			GuiFunctions.showError(self, "No HPV16 sequences were identified. Programme execution has been stopped.")
-		mainW.paramsdf.loc["query"] = query_f_path
-		self.finished.emit()
-		return
-
 	def runPipeline(self) -> None:
 		paramsdf = mainW.paramsdf
-		query_f_path, hpv16error = wrapper.main(paramsdf)
-		# if hpv16error == True:
-		# 	GuiFunctions.showError(self, "No HPV16 sequences were identified. Programme execution has been stopped.")
-		# # 	self.logW.close()
-		# mainW.paramsdf.loc["query"] = query_f_path
-		self.finished.emit()		
+		query_f_path, outdir, hpv16error = mainW.cliMainFunctions.main(paramsdf)
+		if hpv16error == True:
+			GuiFunctions.showError(self, "No HPV16 sequences were identified. Programme execution has been stopped.")
+		# print(mainW.paramsdf.values)
+		
+		mainW.paramsdf.loc["query"] = query_f_path
+		# print(mainW.paramsdf.values)
+
+		mainW.paramsdf.loc["out", "Value"] = outdir
+		# print(mainW.paramsdf.values)
+		self.finished.emit()
 		return
 
 class MainWindow(QMainWindow):
@@ -107,7 +100,7 @@ class MainWindow(QMainWindow):
 		self.buttons = {}		
 		
 		self.ui.stackedWidget.setMinimumWidth(20)
-		GuiFunctions.addNewMenu(self, "Main Page", "homeButton", "url(:/16x16/icons/16x16/cil-home.png)", True)
+		GuiFunctions.addNewMenu(self, "Main Page", "homeButton", "url(:resources/icons/cil-home.png)", True)
 		GuiFunctions.addHomeButtons(self)
 
 		# Select home menu on init
@@ -203,9 +196,13 @@ class GuiFunctions(MainWindow):
 		self.buttons[name] = button
 		if isTopMenu:
 			self.ui.menusLayout.addWidget(button)
-		else:
-			self.ui.layout_menu_bottom.addWidget(button)
 
+	def removeMenu(self, name):
+		if name in self.buttons:
+			self.ui.menusLayout.removeWidget(self.buttons[name])
+			self.buttons[name].deleteLater()
+			self.buttons[name] = None
+		
 	def selectMenu(getStyle):
 		select = getStyle + ("QPushButton { border-right: 7px solid rgb(44, 49, 60); }")
 		return select
@@ -249,7 +246,11 @@ class GuiFunctions(MainWindow):
 			homeButton.setMinimumSize(QSize(0, 70))
 			homeButton.setLayoutDirection(Qt.LeftToRight)
 			homeButton.setFont(font)
-			homeButton.setStyleSheet(Style.style_bt_standard.replace('ICON_REPLACE', "url(:/16x16/icons/16x16/cil-home.png)"))
+			if objName == "selectOutdirButton":
+				homeButton.setEnabled(False)
+				homeButton.setStyleSheet(Style.style_bt_disabled.replace('ICON_REPLACE', "url(:/resources/icons/cil-home.png)"))
+			else:
+				homeButton.setStyleSheet(Style.style_bt_standard.replace('ICON_REPLACE', "url(:/resources/icons/cil-home.png)"))
 			homeButton.setText(name)
 			homeButton.setToolTip(name)
 			homeButton.clicked.connect(self.Button)
@@ -288,23 +289,35 @@ class GuiFunctions(MainWindow):
 			homeButton.setMinimumSize(QSize(0, 70))
 			homeButton.setLayoutDirection(Qt.LeftToRight)
 			homeButton.setFont(font)
-			homeButton.setStyleSheet(Style.style_bt_standard.replace('ICON_REPLACE', "url(:/16x16/icons/16x16/cil-home.png)"))
+			homeButton.setStyleSheet(Style.style_bt_standard.replace('ICON_REPLACE', "url(:/resources/icons/cil-home.png)"))
 			homeButton.setText(name)
 			homeButton.setToolTip(name)
 			homeButton.clicked.connect(self.Button)
 			if objName == "runPipelineButton":
-				homeButton.setStyleSheet(Style.style_bt_highlight.replace('ICON_REPLACE', "url(:/16x16/icons/16x16/cil-home.png)"))
+				homeButton.setStyleSheet(Style.style_bt_highlight.replace('ICON_REPLACE', "url(:/resources/icons/cil-home.png)"))
 			if objName == "loadResultsButton":
 				self.ui.homeMenuGridLayout.addWidget(self.ui.orLabel)
 			if objName == "openHelpButton":
 				self.ui.homeMenuGridLayout.addItem(menuSpacer)
 			self.ui.homeMenuGridLayout.addWidget(homeButton)
 
-	def selectCurrentPBar(pBarIdx):
+	def resetMainPage(self) -> None:
+		for i in reversed(range(self.ui.homeMenuGridLayout.count())): 
+			if self.ui.homeMenuGridLayout.itemAt(i).widget() != None:
+				self.ui.homeMenuGridLayout.itemAt(i).widget().setParent(None)
+		self.ui.homeMenuGridLayout.addWidget(self.ui.toolLabel)
+		self.ui.homeMenuGridLayout.addWidget(self.ui.menuLabel)
+		GuiFunctions.addHomeButtons(self)
+
+	def selectCurrentPBar(pBarIdx: int) -> None:
 		mainW.ui.currentProgressBar = mainW.ui.progressBars[pBarIdx]
 	
-	def updateProgress(val):
+	def updateProgress(val: int) -> None:
 		mainW.ui.currentProgressBar.setValue(val)
+
+	def resetProgressBars(self):
+		for progressBar in self.ui.progressBars:
+			progressBar.setValue(0)
 
 	def showError(self,text: str, windowTitle: str = "Error") -> None:
 		errorMsg = QErrorMessage(parent = mainW)
@@ -328,7 +341,11 @@ class GuiFunctions(MainWindow):
 		fasta_path = pathlib.Path(response[0])
 		if fasta_path != pathlib.Path("."):
 			mainW.fasta_path = fasta_path
-			mainW.paramsdf.loc["out"] = mainW.paramsdf.loc["out"] / pathlib.Path(str(fasta_path.stem) + "_" + str(date.today()).replace("-","_"))
+			if "out_og" in mainW.paramsdf.index: # Then it is not the first run
+				mainW.paramsdf.loc["out"] = mainW.paramsdf.loc["out_og"]
+			else:
+				mainW.paramsdf.loc["out_og"] = mainW.paramsdf.loc["out"]
+			mainW.paramsdf.loc["out"] = mainW.paramsdf.loc["out"] / pathlib.Path(str(fasta_path.stem) + "_" + str(date.today()).replace("-","_") + "_run0")
 			mainW.paramsdf.loc["query"] = str(mainW.fasta_path)
 			mainW.paramsdf.loc["in"] = str(mainW.fasta_path.parent)
 			mainW.outdir = mainW.paramsdf.loc["out", "Value"]
@@ -360,6 +377,8 @@ class GuiFunctions(MainWindow):
 		if response == "":
 			return
 		else:
+			int_params = ("num_threads", "SNP_identification_Word_Size", "Gene_identification_Word_size")
+			float_params = ()
 			mainW.outdir = pathlib.Path(response)
 			mainW.paramsdf.loc["out"] = str(mainW.outdir)
 			logfile = mainW.outdir / pathlib.Path(".logfile.log")
@@ -372,16 +391,22 @@ class GuiFunctions(MainWindow):
 				m = re.match(r".+\tparam: (\S+),(\S+)",line)
 				if m:
 					index, val = m.group(1), m.group(2)
-					if re.match(r"\/|\\",val):
-						val = pathlib.Path(val)	
+					if re.match(r"\/",val) or re.match(r".+\\.+",val):
+						val = pathlib.Path(val)
+					if "_Evalue" in index:
+						val = float(val)
+					if index in int_params:
+						val = int(val)
 					mainW.paramsdf.loc[index] = val
+
 			mainW.fasta_path = mainW.paramsdf.loc["query","Value"]
 			if mainW.outdir != mainW.fasta_path.parent:
 				mainW.paramsdf.loc["query","Value"] = mainW.outdir / mainW.fasta_path.name
 				mainW.fasta_path = mainW.paramsdf.loc["query","Value"]
 			mainW.totalSequenceRecDict = SeqIO.index(str(mainW.fasta_path),"fasta")
 			mainW.analyzedSeqs = list(mainW.totalSequenceRecDict.keys())
-			GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)
+			GuiFunctions.removeMenu(self, "Results") # Just in case this is not the first time the user loads the results
+			GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/resources/icons/cil-magnifying-glass.png)", True)
 			GuiFunctions.initVariables(self)
 			mainW.showMaximized()
 			mainW.buttons["Results"].click()
@@ -403,21 +428,27 @@ class GuiFunctions(MainWindow):
 		self.worker = Worker() # Step 3
 		self.worker.moveToThread(self.thread) # Step 4
 		
-		self.thread.started.connect(self.worker.runPipelineNew) # Step 5
-
+		self.thread.started.connect(self.worker.runPipeline) # Step 5
 		# Create a new window for the progress
 		self.worker.finished.connect(self.thread.quit) # Step 5
 		self.worker.finished.connect(self.worker.deleteLater) # Step 5
 		self.thread.finished.connect(self.thread.deleteLater) # Step 5
 		self.thread.start() # Step 6
+		self.thread.finished.connect(lambda: mainW.buttons["Main Page"].setEnabled(True))
+		self.thread.finished.connect(lambda: mainW.buttons["Main Page"].setStyleSheet(Style.style_bt_standard.replace('ICON_REPLACE', "url(:/resources/icons/cil-home.png)")))
+		self.thread.finished.connect(lambda: GuiFunctions.removeMenu(self, "Results"))
+		self.thread.finished.connect(lambda: GuiFunctions.removeMenu(self, "Progress"))
+		self.thread.finished.connect(lambda: GuiFunctions.resetProgressBars(self))
+		self.thread.finished.connect(lambda: GuiFunctions.resetMainPage(mainW))
 		self.thread.finished.connect(lambda: GuiFunctions.initVariables(self))
-		self.thread.finished.connect(lambda: GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/16x16/icons/16x16/cil-magnifying-glass.png)", True)) # Step 7
+		self.thread.finished.connect(lambda: GuiFunctions.addNewMenu(self, "Results", "resultsButton", "url(:/resources/icons/cil-magnifying-glass.png)", True)) # Step 7
 		self.thread.finished.connect(lambda: mainW.showMaximized())
 		self.thread.finished.connect(lambda: mainW.buttons["Results"].click())
 
 	##### Results page functions
 	def initVariables(self: QMainWindow) -> None:
 		# self is mainW
+		self.outdir = self.paramsdf.loc["out", "Value"]
 		self.dfBlast = pd.read_excel(self.outdir / "GeneIdentification_results.xlsx", engine="openpyxl")
 		self.dfLineageSnp = pd.read_excel(self.outdir / "LineageSpecificSNPs.xlsx", engine="openpyxl", index_col=0)
 		self.dfCancerSnp = pd.read_excel(self.outdir / "cancerSNP_results.xlsx", engine="openpyxl")
@@ -459,7 +490,11 @@ class GuiFunctions(MainWindow):
 			# TODO: Maybe optimize for memory?
 		mainW.ui.translateResultsUI(self)
 		self.putRecSeqs = GuiFunctions.loadRecList(self)
-		GuiFunctions.showError(self, F"{len(self.putRecSeqs)} putative recombinants have been found", "Information")
+		num_of_recombinants = len(self.putRecSeqs)
+		if  num_of_recombinants == 1:
+			GuiFunctions.showError(self, F"{num_of_recombinants} putative recombinant has been found", "Information")
+		else:
+			GuiFunctions.showError(self, F"{num_of_recombinants} putative recombinants have been found", "Information")
 		return
 
 	def updateListWidget(self) -> None:
@@ -595,8 +630,8 @@ class GuiFunctions(MainWindow):
 		cSnp = mainW.ui.cancerSnpTable.item(self.row(),0).text()
 		m = re.match(r"(\S+_NuclPos_\d+).+", cSnp)
 		cSnp = m.group(1) + ".md"
-		fin = pathlib.Path(__file__).parent / pathlib.Path("resources") / pathlib.Path("cSNPinfo") / cSnp 
-		mainW.ui.cancerSnpTextBrowser.setSource(QUrl(str(fin)))
+		mainW.ui.cancerSnpTextBrowser.setSearchPaths([str(pathlib.Path(__file__).parent / pathlib.Path("resources") / "cSNPinfo")])
+		mainW.ui.cancerSnpTextBrowser.setSource(QUrl(cSnp))
 		mainW.ui.cancerSnpTextBrowser.setAlignment(Qt.AlignJustify)
 		return 
 
@@ -821,7 +856,7 @@ class Simplot_page(QMainWindow):
 		self.response = QFileDialog.getSaveFileName(
 			parent = self,
 			caption = "Save similarity plot image",
-			directory = f"{self.qseq} - Window size: {self.wsize} - Step: {str(self.step)}.jpg" ,
+			directory = f"{self.qseq} - Window size - {self.wsize} - Step - {str(self.step)}.jpg" ,
 			filter = file_filter,
 			initialFilter = file_filter
 		)
@@ -1323,7 +1358,7 @@ class Ui_MainWindow(QMainWindow):
 		self.saveGraphicsFrameButton.setFont(QFont("Segoe UI",9))
 		self.saveGraphicsFrameButton.setStyleSheet(Style.style_push_button)
 		icon = QIcon()
-		icon.addFile("url(:/16x16/icons/16x16/cil-magnifying-glass.png)", QSize(), QIcon.Normal, QIcon.Off)
+		icon.addFile("url(:/resources/icons/cil-magnifying-glass.png)", QSize(), QIcon.Normal, QIcon.Off)
 		self.saveGraphicsFrameButton.setIcon(icon)
 		self.saveGraphicsFrameButton.setText("Save graphics")
 		self.saveGraphicsFrameButton.clicked.connect(GuiFunctions.saveGraphics)
@@ -1359,6 +1394,7 @@ class Ui_MainWindow(QMainWindow):
 		self.orLabel.setText(QCoreApplication.translate("MainWindow", "OR", None))
 
 	def translateResultsUI(self, mainWindow):
+		self.listWidget.clear()
 		self.listWidget.addItems(mainW.analyzedSeqs)
 
 class Style():
@@ -1395,6 +1431,35 @@ class Style():
 		QPushButton:pressed {
 			background-color: rgb(85, 170, 255);
 			border-left: 28px solid rgb(85, 170, 255);
+		}
+		"""
+	)
+
+	style_bt_disabled = (
+		"""
+		QPushButton {
+			background-image: ICON_REPLACE;
+			background-position: left center;
+			background-repeat: no-repeat;
+			border: none;
+			border-left: 28px solid rgb(27, 29, 50);
+			background-color: rgb(27, 29, 50);
+			text-align: left;
+			padding-left: 45px;
+		}
+		"""
+	)
+	style_home_bt_unavailable = (
+		"""
+		QPushButton {
+			background-image: ICON_REPLACE;
+			background-position: left center;
+			background-repeat: no-repeat;
+			border: none;
+			border-left: 28px solid rgb(27, 29, 50);
+			background-color: rgb(27, 29, 50);
+			text-align: left;
+			padding-left: 45px;
 		}
 		"""
 	)
@@ -1436,6 +1501,12 @@ class Style():
 				border: 2px;
 				border-radius: 5px;
 			}
+			QTableCornerButon::section{
+				background-color: rgb(52, 59, 72);
+			}
+			QHeaderView::section{
+				background-color: rgb(52, 59, 72);
+			}
 			QScrollBar:vertical {
 				border: none;
 				background: rgb(52, 59, 72);
@@ -1472,7 +1543,43 @@ class Style():
 			 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
 				 background: none;
 			}
-			# TODO: Add the horizontal bar style
+
+			QScrollBar:horizontal {
+				border: none;
+				background: rgb(52, 59, 72);
+				height: 14px;
+				margin: 0px 21px 0px 21px;
+				border-radius: 0px;
+			}
+			QScrollBar::handle:horizontal {	
+				background: rgb(85, 170, 255);
+				min-width: 25px;
+				border-radius: 7px;
+			}
+			QScrollBar::add-line:horizontal {
+				border: none;
+				background: rgb(55, 63, 77);
+				width: 20px;
+				border-top-right-radius: 7px;
+				border-bottom-right-radius: 7px;
+				subcontrol-position: right;
+				subcontrol-origin: margin;
+			}
+			QScrollBar::sub-line:horizontal {
+				border: none;
+				background: rgb(55, 63, 77);
+				width: 20px;
+				border-top-left-radius: 7px;
+				border-bottom-left-radius: 7px;
+				subcontrol-position: left;
+				subcontrol-origin: margin;
+			}
+			QScrollBar::left-arrow:horizontal, QScrollBar::right-arrow:horizontal {
+				background: none;
+			}
+			 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+				 background: none;
+			}
 			"""
 	)
 	style_push_button = (
@@ -1545,6 +1652,42 @@ class Style():
 			border-radius: 5px;
 			background-color: rgb(52, 59, 72);
 		}
+		QScrollBar:vertical {
+			border: none;
+			background: rgb(52, 59, 72);
+			width: 14px;
+			margin: 5px 0 5px 0;
+			border-radius: 0px;
+		}
+		QScrollBar::handle:vertical {	
+			background: rgb(85, 170, 255);
+			min-height: 25px;
+			border-radius: 7px;
+		}
+		QScrollBar::add-line:vertical {
+			border: none;
+			background: rgb(55, 63, 77);
+			height: 20px;
+			border-bottom-left-radius: 7px;
+			border-bottom-right-radius: 7px;
+			subcontrol-position: bottom;
+			subcontrol-origin: margin;
+		}
+		QScrollBar::sub-line:vertical {
+			border: none;
+			background: rgb(55, 63, 77);
+			height: 20px;
+			border-top-left-radius: 7px;
+			border-top-right-radius: 7px;
+			subcontrol-position: top;
+			subcontrol-origin: margin;
+		}
+		 QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {
+			background: none;
+		}
+		 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+			 background: none;
+		}
 		"""
 	)
 	style_list_widget = (
@@ -1605,7 +1748,7 @@ class Style():
 		QCheckBox::indicator:checked {
 		background: 3px solid rgb(52, 59, 72);
 		border: 3px solid rgb(52, 59, 72);
-		background-image: url(:/16x16/icons/16x16/cil-check-alt.png);
+		background-image: url(:/resources/icons/cil-check-alt.png);
 		}
 		"""
 	)
@@ -1649,4 +1792,6 @@ if __name__ == "__main__":
 	QFontDatabase.addApplicationFont('fonts/segoeui.ttf')
 	QFontDatabase.addApplicationFont('fonts/segoeuib.ttf')
 	screen = app.primaryScreen()
+	if "win" in sys.platform:
+		ctypes.windll.user32.ShowWindow( ctypes.windll.kernel32.GetConsoleWindow(), 6)
 	sys.exit(app.exec_())

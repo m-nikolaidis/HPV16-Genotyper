@@ -314,7 +314,7 @@ class MainFunctions(QObject):
 				kept_indeces.append(final_idx)
 		df = df.loc[kept_indeces]
 		hpv16_sequences = list(df["Query sequence"])
-		df.to_excel(hpv16filt_results_path)
+		df.to_excel(hpv16filt_results_path, index = False)
 		logging.info(F"Finished, identified {len(hpv16_sequences)} HPV16 sequences ")
 		return hpv16_sequences
 
@@ -404,6 +404,7 @@ class MainFunctions(QObject):
 					final_seqs[gene][org] = seq
 			return final_seqs		
 
+		
 		logging.info(F"Creating the alignment files for each gene")
 		coords_df = pd.read_excel(geneid_blast_res_xls,engine="openpyxl") 
 		# TODO: Check for efficiency https://pandas.pydata.org/pandas-docs/stable/user_guide/scale.html
@@ -429,7 +430,6 @@ class MainFunctions(QObject):
 		aln_out_dir = outdir / pathlib.Path("Alignments")
 		pool = ThreadPool(threads)
 		gene_regex = re.compile(r'^\S+_([E|L]\d+).fa$')
-		
 		def _alnFunc(f):
 				"""
 				Initialize the command to run and return 1 once the subprocess is done
@@ -440,11 +440,13 @@ class MainFunctions(QObject):
 				aln_files.append(fout)
 				db_gene_f = profiledb_dir / pathlib.Path(gene + "_profile.fa")
 				arguments = " -profile -in1 " + str(f) + \
-					" -in2 " + str(db_gene_f) + " -out " + str(fout)
+					" -in2 " + str(db_gene_f) + " -quiet -out " + str(fout)
 				
 				self._callMultiThreadProcc(muscle_bin + arguments)
 				return 1
 		
+
+
 		for i in pool.imap_unordered(_alnFunc, gene_files):
 			done_processes += i
 			self.emitSignal(int((done_processes/total_processes)*100), 4)	
@@ -455,7 +457,7 @@ class MainFunctions(QObject):
 
 	def build_trees(self, outdir: pathlib.Path, aln_files: list, seaview_bin: str, 
 		threads: int, method: str = "BioNJ", dist: str = "Kimura", 
-		nj_bootstrap_repl: int = 1000, exe: bool = True
+		nj_bootstrap_repl: int = 100, exe: bool = True
 	) -> pathlib.Path:
 		"""
 		Compute the Neighbour joining phylogenetic trees with 
@@ -513,16 +515,21 @@ class MainFunctions(QObject):
 		makeblastdb_bin, blastn_bin, muscle_bin, seaview_bin = _init_binaries(system)
 		annot_f = pathlib.Path(paramsdf.loc["SNP_annotation_file","Value"])
 		threads = paramsdf.loc["num_threads", "Value"]
-		env_setup.create_dirs(outdir, exist_ok=True)
-
+		outdir = env_setup.create_dirs(outdir)
+		paramsdf.loc["out","Value"] = outdir
+		print(F"Outdir is {outdir}")
+		
 		# Grab the root logger instance and use it for logging
 		logfile = outdir / pathlib.Path(".logfile.log")
+		# logging.config.fileConfig(str(logfile))
+		logging.getLogger().handlers.clear()
 		logger = logging.getLogger()
 		fhandler = logging.FileHandler(filename=logfile, encoding="UTF-8")
 		formatter = logging.Formatter("%(asctime)s\t%(message)s")
 		fhandler.setFormatter(formatter)
 		logger.addHandler(fhandler)
 		logger.setLevel(logging.DEBUG)
+		
 		logging.info("#### DO NOT DELETE THIS FILE! ###")
 		logging.info(F"Environment set successfully in {outdir} \u2705")
 		logging.info("Parameters used in this run: ")
@@ -586,8 +593,7 @@ class MainFunctions(QObject):
 			muscle_bin, profiledb_dir, threads = threads
 		)
 		self.build_trees(outdir, aln_files, seaview_bin, threads = threads, method = "BioNJ")
-
-		return query_f_path, hpv16error
+		return query_f_path, outdir, hpv16error
 
 def _init_binaries(system: sys.platform) -> list:
 	"""
@@ -611,7 +617,7 @@ def _defaultparams() -> dict:
 	system = sys.platform
 	input_dir = ""
 	query_f = ""
-	outdir = pathlib.Path(__file__).absolute().parent / pathlib.Path("Script_out")
+	outdir = pathlib.Path(__file__).absolute().parent / pathlib.Path("Results_directory")
 	threads_to_use =  multiprocessing.cpu_count() - 2
 	params = {
 		"system": system,

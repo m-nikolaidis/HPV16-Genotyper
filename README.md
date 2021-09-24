@@ -2,6 +2,24 @@
 The tool in CLI has been tested to run in Linux, WSL and Windows (W10).
 CHeck in new install of windows if the binaries run correctly
 ----------------------------------------------------------------------
+
+
+## Requirements
+### Windows
+No requirements
+### Linux
+The application has some requirement in Linux systems depending on the OS version
+* In all versions the libflt1.3 library needs to be installed either via
+	1. `sudo apt-get install libfltk1.3*`
+	or
+	2. running the script runHPV16genotyper with parameter **-i**
+* In 18.04 
+* In 16.04
+	The user also needs to install xcb library? # Maybe use another?
+	Check prometheus history
+
+
+
 # Use DataFrame.to_markdown for the parameters excel
 
 # Write in MD, that the user should have the required priviledges in the chosen output directory
@@ -102,3 +120,5 @@ So we can divide the A from the non-A
 Use the cut-offs to identify putative recombinants / artifacts in the analysis
 Gene identificatio cut-off: Atleast 1 gene with different main lineage
 Lineage specific SNPs: 3 or more SNPs other than the dominant lineage
+
+

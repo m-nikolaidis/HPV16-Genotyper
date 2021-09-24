@@ -1,18 +1,14 @@
-pyinstaller --distpath HPV16genotyper \
+pyinstaller --distpath HPV16-GenotyperUb20 \
 	--workpath tmpBuild \
-	--name  HPV16genotyper \
-	--add-data /media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/src/resources:resources/ \
-	--add-data /media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/src/annot.py:. \
-	--add-data /media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/src/blast.py:. \
-	--add-data /media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/src/env_setup.py:. \
-	--add-data /media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/src/files_rc.py:. \
-	--add-data /media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/src/phylogeny.py:. \
-	--add-data /media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/src/simplot.py:. \
-	--add-data /media/marios/Data/Lab/HPV16/HPV16_genotyping_tool/src/wrapper.py:. \
+	--name  HPV16-Genotyper \
+	--add-data PathTo/resources:resources/ \
+	--add-data PathTo/files_rc.py:. \
+	--add-data PathTo/simplot.py:. \
+	--add-data PathTo/appFunctions.py:. \
 	-d all \
 	--windowed \
-	app.py;
+	../app.py;
 
 rm -r tmpBuild;
-mv *.pyo HPV16genotyper/;
-mv *.spec HPV16genotyper/;
+mv ../*.pyo HPV16-GenotyperUb20/HPV16-Genotyper/;
+mv *.spec HPV16-GenotyperUb20/HPV16-Genotyper/;

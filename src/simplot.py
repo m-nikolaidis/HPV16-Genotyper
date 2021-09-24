@@ -38,7 +38,8 @@ def calculate_similarities(qseq, aln_f, step, window):
 	results = {}
 	def _distance(seq1, seq2, ignore_gaps=False):
 		"""
-		P-distance is calculated in this function
+		Calculate the P-distance of the provided sequences
+		The sequences are window size long
 		"""
 		dissimilar = 0
 		seqsize = 0
@@ -52,7 +53,6 @@ def calculate_similarities(qseq, aln_f, step, window):
 		return round(dissimilar/seqsize,3)
 	
 	aln = AlignIO.read(aln_f,"fasta")
-	names = []
 	indeces = list(range(len(aln)))
 	for idx in indeces:
 		name = aln[idx].id

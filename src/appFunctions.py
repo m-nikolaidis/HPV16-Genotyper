@@ -1,3 +1,4 @@
+# from copy import error
 import re
 import os
 import sys
@@ -13,19 +14,19 @@ from collections import Counter
 from PyQt5.QtCore import pyqtSignal, QObject
 from Bio import SeqIO
 from Bio.Blast.Applications import NcbiblastnCommandline, NcbimakeblastdbCommandline
-# Tool modules
-import annot
-import env_setup
+
+pd.options.mode.chained_assignment = None
 
 class MainFunctions(QObject):
 	countSignal = pyqtSignal(int)
 	pBarIdxSignal = pyqtSignal(int)
+	errorSignal = pyqtSignal(str)
 	startTimerSignal = pyqtSignal(int)
 	stopTimerSignal = pyqtSignal(int)
 	def __init__(self):
 		super().__init__()
 	
-	def emitSignal(self, updateValue: int = None, barIdx: int = None ) -> None:
+	def emitSignal(self, updateValue: int = None, barIdx: int = None, errorMsg: str = None ) -> None:
 		"""
 		Use this signal to update the progress bars in main Window ui
 		The update step is going to be the current value of the progress bar
@@ -34,6 +35,8 @@ class MainFunctions(QObject):
 			self.pBarIdxSignal.emit(barIdx)
 		if updateValue != None:
 			self.countSignal.emit(updateValue)
+		if errorMsg != None:
+			self.errorSignal.emit(errorMsg)
 
 	def startTimer(self) -> None:
 		self.startTimerSignal.emit(1)
@@ -41,12 +44,143 @@ class MainFunctions(QObject):
 	def stopTimer(self) -> None:
 		self.stopTimerSignal.emit(1)
 	
-	##### BLAST search
+	##### General functions
 	def _sort_alphanumeric(self, iteratable: list) -> list:
 		int_convert = lambda text: int(text) if text.isdigit() else text 
 		sorting_key = lambda key: [ int_convert(c) for c in re.split('([0-9]+)', key) ] 
 		return sorted(iteratable, key = sorting_key)
 
+	##### Set-up environment
+	def create_dirs(self, outdir : pathlib.Path, exist_ok: bool = True) -> pathlib.Path:
+		"""
+		Perform the necessary actions to set up the script working environment
+		"""
+		if re.match(r".+_run\d+$",outdir.name):
+			tmpname = outdir.name.split("_run")[0]
+			parentDir = outdir.parent
+			outdirs = os.listdir(parentDir)
+			if len(outdirs) != 0:
+				outdirs = [newdir for newdir in outdirs if tmpname in newdir]
+				outdirs = self._sort_alphanumeric(outdirs)
+				outdir  = pathlib.Path(outdirs[-1])
+				dirname = outdir.name
+				tmp = dirname.split("_run")
+				newrun = int(tmp[1]) + 1
+				newname = "".join([tmp[0], "_run", str(newrun)])
+				outdir = parentDir / newname
+
+		script_out = outdir
+		tmp_out = script_out / pathlib.Path(".tmp")
+		tmp_genes_out = tmp_out / pathlib.Path("Gene_seqs") # Gene files of batch size
+		blast_results = script_out /  pathlib.Path("BlastResults")
+		profiles_out = script_out / pathlib.Path("Alignments") # Final profile alns for each gene
+		trees_out = script_out / pathlib.Path("Phylogenetic_Trees")
+		graphics_out = script_out / pathlib.Path("Graphics")
+		gene_sim_graphics = graphics_out / pathlib.Path("GeneIdentification")
+		snp_graphics = graphics_out / pathlib.Path("LineageSpecificSNPs")
+		
+		script_out.mkdir(exist_ok = exist_ok, parents=True)
+		tmp_out.mkdir(exist_ok = exist_ok)
+		tmp_genes_out.mkdir(exist_ok = exist_ok)
+		blast_results.mkdir(exist_ok = exist_ok)
+		profiles_out.mkdir(exist_ok = exist_ok)
+		trees_out.mkdir(exist_ok = exist_ok)
+		graphics_out.mkdir(exist_ok = exist_ok)
+		gene_sim_graphics.mkdir(exist_ok = exist_ok)
+		snp_graphics.mkdir(exist_ok = exist_ok)
+		return script_out
+
+
+	def file_exists(self, f: pathlib.Path) -> str or None:
+		exist = f.exists()
+		if exist == False:
+			print(F"ERROR:CRITICAL: {f} does not exist")
+			msg = F" Input file {f} does not exist "
+			self.emitSignal(errorMsg = msg)
+			raise Exception(msg)
+		logging.info(F"{f} exists")
+		return None
+	
+	def input_file_format(self, fasta_file_path: pathlib.Path) -> str or None:
+		"""
+		Check if the input query file is in supported format
+		Currently supporting formats: Fasta
+		"""
+		check_handle = open(fasta_file_path, "r")
+
+		if fasta_file_path.stat().st_size == 0:
+			print("ERROR:CRITICAL: Input file is empty, check input file ")
+			msg = " Input file is empty, please check input file and restart the application"
+			self.emitSignal(errorMsg = msg)
+			return msg
+		try:
+			first_line = check_handle.readline().rstrip()
+			if re.match(r'^>', first_line): # Is fasta
+				pass
+			else:
+				print("ERROR:CRITICAL: The input file is not fasta ")
+				msg = " The input file is not fasta "
+				self.emitSignal(errorMsg = msg)
+				return msg
+		except UnicodeError:
+			print("ERROR:CRITICAL: The input file is not in plain text file format ")
+			msg = " The input file is not in plain text file format, please check input file and restart the application"
+			self.emitSignal(errorMsg = msg)
+			return msg
+		logging.info(F"Finished input file integrity check successfully")
+		return None
+
+	def dir_priviledges(self, path: pathlib.Path) -> str or None:
+		"""
+		Check if the user has write priviledges in the specified directory
+		Input: Posix | Window path from pathlib library
+		"""
+		write_priviledges = os.access(path.parent, os.W_OK)
+		if not write_priviledges:
+			print(F"ERROR:CRITICAL: Program has no write permission on {path.parent}")
+			msg = "You cannot write in the specified output directory, please check output directory and restart the application"
+			self.emitSignal(errorMsg = msg)
+			return msg
+		logging.info(F"Have permission to write on {path}")
+		return None
+
+	def filter_hpv16(self, fasta_file_path: pathlib.Path, 
+		seqs_to_include: list, outdir: pathlib.Path
+	) -> str:
+		"""
+		Write the filtered output file in the output directroy with name: Filtered_" + fasta_file_path.name
+		"""
+
+		def _remove_problematic_seqs(fasta_file_path: pathlib.Path, seqs_to_include: list) -> dict:
+			"""
+			Clean the HPV16 sequences for non ATGC nucleotides
+			All the non canonical nucleotides will be turned to N
+			"""
+			sequences_tmp = SeqIO.index(str(fasta_file_path), "fasta")
+			sequences = {}
+			for included_seq in seqs_to_include:
+				sequences[included_seq] = str(sequences_tmp[included_seq].seq).upper()
+			for seqname in sequences:
+				sequence = sequences[seqname]
+				for x in range(len(sequence)):
+					char = sequence[x]
+					if char != "A" and char != "T" and char != "G" and char != "C" and char != "N":
+						sequence = sequence[:x] + "N" + sequence[x+1:]
+				sequences[seqname] =  sequence
+			return sequences
+
+		sequences = _remove_problematic_seqs(fasta_file_path, seqs_to_include)
+		# Write the clean sequences
+		fout = outdir / ("Filtered_" + fasta_file_path.name)
+		fname = fout.name
+		with open(fout, "w+") as output_file:
+			for seqname in sequences:
+				output_file.write(">" + seqname + "\n" + sequences[seqname] + "\n")
+		output_file.close()
+		logging.info("Filtered non HPV-16 sequences")
+		return fname
+	
+	##### BLAST search
 	def blastProgress(self):
 		column_names = ["qaccver","saccver","qstart","qend","sstart","send","evalue","bitscore","length","pident","qcovs","qcovhsp","slen"]
 		def _helper(f):
@@ -126,14 +260,12 @@ class MainFunctions(QObject):
 		self.blastPool = ThreadPool(1)
 		self.total = total
 		self.barIdx = barIdx
-		print("Starting blast")
 		self.startTimer() # Send signal to start the blastTimer
 		blastn_search()
 		self.blastPool.close()
 		self.blastPool.join()
 		self.stopTimer() # Send signal to main app to stop the timer
 		self.emitSignal(100, barIdx)
-		print("Finished")
 		logging.info("Finished - BLASTn search ")
 		return self.blastres_f_path
 
@@ -222,6 +354,29 @@ class MainFunctions(QObject):
 			middle_pos = (round(probe_len/2) - sstart)
 			return 	[qseq[qstart + middle_pos - 1]  , middle_pos] #  - 1 because the sequence is 0 based
 
+		def _cancerSNP(snpName):
+			"""
+			Return the cancer mutation depending on the queried reference SNP
+			"""
+			if snpName == "NC001526_NuclPos_145_G":
+				return "T"
+			if snpName == "NC001526_NuclPos_335_C":
+				return "T"
+			if snpName == "NC001526_NuclPos_350_T":
+				return "G"
+			if snpName == "NC001526_NuclPos_647_A":
+				return "G"
+			if snpName == "NC001526_NuclPos_749_C":
+				return "T"
+			if snpName == "NC001526_NuclPos_2860_C":
+				return "A"
+			if snpName == "NC001526_NuclPos_3410_C":
+				return "T"
+			if snpName == "NC001526_NuclPos_3684_C":
+				return "A"
+			if snpName == "NC001526_NuclPos_4042_A":
+				return "G/C/T"
+
 		probe_len = 31
 		probe_table_res = {}
 		col_names = ["Query sequence", "Subject sequence", "Query start", "Query end",
@@ -268,8 +423,13 @@ class MainFunctions(QObject):
 				v.index.name = "SNP"
 				tmpdict[k] = v
 			probedf = pd.concat(tmpdict,axis=0)
-			probedf.index.names = ["Query sequence", "SNP"]
+			probedf.index.names = ["Query sequence", "Reference genome position"]
 			probedf = probedf.reset_index()
+			probedf["Cancer SNP"] = probedf["Reference genome position"].apply(lambda x: _cancerSNP(x))
+			probedf["Reference genome position"] =  probedf["Reference genome position"].apply(lambda x: "_".join(x.split("_")[:3]))
+			probedf = probedf[["Query sequence", "Reference genome position", 
+				"Cancer SNP", "Query nucleotide", "Query position", "E-value"]
+			]
 			probedf.to_excel(probe_results_path,na_rep="X")
 		else:
 			for qorg in probe_table_res:
@@ -286,10 +446,11 @@ class MainFunctions(QObject):
 	def identify_nonHPV16(self, blastres_f_path: pathlib.Path) -> list:
 		"""
 		In Mirabello et al., 2018 doi:10.3390/v10020080 it is reviewed that HPV types in the same species 
-		(HPV16 vs 31; which are both Alphapapillomavirus-9 'are defined by difference of atleast 10% in L1 nucleotide sequence'
+		(HPV16 vs 35; which are both Alphapapillomavirus-9 'are defined by difference of atleast 10% in L1 nucleotide sequence'
 		Also
 		within each of these HPV types there are variant lineages and sublineages with intratypic genome sequence differences of 1.0–10% and 0.5–1.0%,
 		respectively
+		HPV35 is the closest relative to HPV16 based on fig1 of 10.1371/journal.pone.0020183
 		"""
 
 		logging.info("Identifying HPV16 sequences")
@@ -298,7 +459,6 @@ class MainFunctions(QObject):
 				"E-value", "Bitscore", "Aln length", "Perc. identity", "Query coverage", "Query coverage hsp", "Subject length"
 		]
 		df = pd.read_csv(blastres_f_path, sep="\t",names = col_names)
-		hpv16filt_results_path = blastres_f_path.parent / ".." / "HPV16filt_BlastN_results.xlsx"
 		kept_indeces = []
 		seqs = np.unique(df["Query sequence"])
 		for seq in seqs:
@@ -314,9 +474,82 @@ class MainFunctions(QObject):
 				kept_indeces.append(final_idx)
 		df = df.loc[kept_indeces]
 		hpv16_sequences = list(df["Query sequence"])
-		df.to_excel(hpv16filt_results_path, index = False)
-		logging.info(F"Finished, identified {len(hpv16_sequences)} HPV16 sequences ")
+
+		nonHPV16Seqs = list(set(seqs).difference(hpv16_sequences))
+		nonHPV16fout = blastres_f_path.parent.parent / "nonHPV16.txt"
+		nonHPV16fout.write_text(os.linesep.join(nonHPV16Seqs))
+		
+		logging.info(F"Finished, identified {len(hpv16_sequences)} HPV16 and {len(nonHPV16Seqs)} non HPV16 sequences ")
 		return hpv16_sequences
+
+	def annotate_results(self, annot_f: pathlib.Path,probe_res: pathlib.Path,
+		empty: str ="Other",exe: bool=True
+		) -> int:
+		"""
+		Probe results is the file that has mapped each nucleotide results of the probe blast
+		For the non ATGC character value will be automatically Other
+		"""
+		xl_engine = "openpyxl"
+		annotdf = pd.read_excel(annot_f,index_col=0, engine=xl_engine)
+		probedf = pd.read_excel(probe_res,index_col=0, engine=xl_engine)
+		to_replace = {"Lin_ABD":"Other", "Lin_ABC":"Other", 
+			"Lin_ABD":"Other", "Lin_ACD":"Other"
+		}
+		if not exe:
+			num_snps = len(probedf.columns)
+			return num_snps
+		# probedf_cp = probedf.copy()
+
+		ref_prefix_regex = re.compile(r'(\S+)_\d+$') # Take this based on the probedf
+		probedf_first_col = probedf.columns[0]
+		m = re.match(ref_prefix_regex,probedf_first_col)
+		ref_prefix = m.group(1)
+		tmpl = annotdf.index.to_list()
+		tmpl = [ref_prefix + "_" + str(l) for l in tmpl]
+		annotdf.index = tmpl # So i can match the columns of probe results file
+
+		annotdict = annotdf.to_dict(orient='index')
+
+		possible_nucl_chars=list(np.unique(probedf.values)) # Non ATGC characters will be automatically value to empty
+
+		for char in possible_nucl_chars:
+			if char == "A" or char == "T" or char == "G" or char == "C":
+				pass
+			else:
+				for probe in annotdict:
+					annotdict[probe][char] = empty
+		probedf = probedf.replace(annotdict)
+		probedf = probedf.replace(to_replace)
+		num_snps = len(probedf.columns)
+		counters = {}
+		indeces = probedf.index
+		for idx in indeces:
+			 counters[idx] = dict(Counter(probedf.loc[idx]))
+		t = pd.DataFrame.from_dict(counters,orient='index')
+		t.fillna(0.0,inplace=True)
+		t = t.apply(lambda x:round((x/num_snps)*100,2))
+		cols = t.columns.to_list()
+		cols.remove(empty)
+		indeces = t.index
+		for idx in indeces:
+			maxval = t.loc[idx,cols].astype(float).idxmax()
+			t.loc[idx,"Dominant lineage"] = maxval
+		probedf = probedf.join(t)
+		annotdf = annotdf.T
+		extra_row = {"Nucleotides":{}}
+		for col in annotdf.columns:
+			for idx in annotdf.index:
+				if col not in extra_row["Nucleotides"]:
+					extra_row["Nucleotides"][col] = idx + ":" + annotdf.loc[idx,col]
+				else:
+					extra_row["Nucleotides"][col] += "," + idx + ":" + annotdf.loc[idx,col]
+		tmpdf = pd.DataFrame.from_dict(extra_row,orient='index')
+		# tmpdf = pd.concat([tmpdf,probedf_cp])
+		tmpdf = pd.concat([tmpdf,probedf])
+		tmpdf.index.name = "Query sequence"
+		tmpdf.fillna("X",inplace=True)
+		tmpdf.to_excel(probe_res, engine=xl_engine)
+		return num_snps, tmpdf
 
 	def find_recombinants(self, blastdf: pd.DataFrame, lineageSnpDf: pd.DataFrame, 
 		outdir: pathlib.Path
@@ -339,7 +572,7 @@ class MainFunctions(QObject):
 				if dom_lineage not in tmplineage:
 					recombStatus[org]["geneID"] = 1
 			# Recombination by lineage SNPs 
-			tmpdf = lineageSnpDf[lineageSnpDf.index == org].tail(1).T.head(67) # lineageSnpDf["Index"] will become lineageSnpDf.index
+			tmpdf = lineageSnpDf[lineageSnpDf.index == org].T.head(67)
 			tmplineages = dict(Counter(tmpdf[tmpdf.columns[0]].values))
 			dom_lineage = max(tmplineages,key=lambda key: tmplineages[key])
 			if dom_lineage == "Other":
@@ -515,9 +748,15 @@ class MainFunctions(QObject):
 		makeblastdb_bin, blastn_bin, muscle_bin, seaview_bin = _init_binaries(system)
 		annot_f = pathlib.Path(paramsdf.loc["SNP_annotation_file","Value"])
 		threads = paramsdf.loc["num_threads", "Value"]
-		outdir = env_setup.create_dirs(outdir)
+		
+		# Critical checks
+		priviledgeMsg = self.dir_priviledges(outdir)
+		existMsg = self.file_exists(query_f_path)
+		fmtMsg = self.input_file_format(query_f_path)
+		if priviledgeMsg != None or existMsg != None or fmtMsg != None:
+			return None
+		outdir = self.create_dirs(outdir)
 		paramsdf.loc["out","Value"] = outdir
-		print(F"Outdir is {outdir}")
 		
 		# Grab the root logger instance and use it for logging
 		logfile = outdir / pathlib.Path(".logfile.log")
@@ -531,18 +770,13 @@ class MainFunctions(QObject):
 		logger.setLevel(logging.DEBUG)
 		
 		logging.info("#### DO NOT DELETE THIS FILE! ###")
-		logging.info(F"Environment set successfully in {outdir} \u2705")
+		logging.info(F"Environment set successfully in {outdir}")
 		logging.info("Parameters used in this run: ")
 		indeces = paramsdf.index
 		for index in indeces:
 			val = paramsdf.loc[index,"Value"]
 			logging.info(F"param: {index},{val}")
-
-		# Environment setup
-		env_setup.file_exists(query_f_path)
-		env_setup.input_file_format(query_f_path)
-		env_setup.dir_priviledges(outdir)
-
+		
 		### Basic workflow
 		# Filter input file
 		workflow = "HPV16 filter"
@@ -555,7 +789,8 @@ class MainFunctions(QObject):
 		if len(hpv16_seqs) == 0:
 			hpv16error = True
 			return query_f_path, hpv16error
-		query_f_filt = env_setup.filter_hpv16(query_f_path, hpv16_seqs, outdir)
+		# query_f_filt = env_setup.filter_hpv16(query_f_path, hpv16_seqs, outdir)
+		query_f_filt = self.filter_hpv16(query_f_path, hpv16_seqs, outdir)
 		query_f = query_f_filt
 		query_f_path = outdir / query_f
 		logging.info(F"param: query,{str(query_f_path)}")
@@ -564,22 +799,19 @@ class MainFunctions(QObject):
 		query_orgs_num = len(query_f_index.keys())
 		# BLASTn search
 		workflow = "gene identification"
-		print(F"Going to execute blast with workflow {workflow}")
 		geneid_blastn_res_path = self.blastn_search(paramsdf, query_f_path, workflow, 
 			makeblastdb_bin, blastn_bin, query_orgs_num
 		)
 		geneid_blastn_res_path_xlsx, blastDF = self.parse_GeneID_results(geneid_blastn_res_path,paramsdf, exe=exe)
 		
 		workflow = "snp"
-		print(F"Going to execute blast with workflow {workflow}")
 		snp_blastn_res_path = self.blastn_search(paramsdf, query_f_path, workflow, 
 			makeblastdb_bin, blastn_bin, query_orgs_num
 		)
 		snp_blastn_res_path_xlsx = self.parse_SNP_results(snp_blastn_res_path, query_f_index, exe=exe)
-		_, snpDFannot = annot.annotate_results(annot_f,snp_blastn_res_path_xlsx, exe=exe)
+		_, snpDFannot = self.annotate_results(annot_f,snp_blastn_res_path_xlsx, exe=exe)
 		
 		workflow = "cancer"
-		print(F"Going to execute blast with workflow {workflow}")
 		C_snp_blastn_res_path = self.blastn_search(paramsdf, query_f_path, workflow, 
 			makeblastdb_bin, blastn_bin, query_orgs_num
 		)

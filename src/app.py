@@ -17,7 +17,7 @@ import os
 import re
 import sys
 import ctypes
-import wrapper # Tool module
+import appFunctions # Tool module
 import simplot # Tool module
 import pathlib
 import logging
@@ -52,6 +52,7 @@ from ete3 import (
 	Tree, TreeStyle, TextFace, NodeStyle
 )
 
+
 class Worker(QObject):
 	"""Use worker classes to give a multithreading behaviour to the application
 	So it does not freeze when a long task is executed
@@ -65,25 +66,20 @@ class Worker(QObject):
 	finished = pyqtSignal()
 	def __init__(self, parent=None):
 		super().__init__(parent)
-		# self.logW = LogWindow()
 		GuiFunctions.addNewMenu(mainW, "Progress", "progressButton", "url(:/resources/icons/cil-magnifying-glass.png)", True)
 		mainW.buttons["Progress"].click()
 		mainW.buttons["Main Page"].setEnabled(False)
 		mainW.buttons["Main Page"].setStyleSheet(Style.style_home_bt_unavailable.replace('ICON_REPLACE', "url(:/resources/icons/cil-home.png)"))
-		# TODO: Also change the style, to resemble something unavailable
 	
 	def runPipeline(self) -> None:
 		paramsdf = mainW.paramsdf
 		query_f_path, outdir, hpv16error = mainW.cliMainFunctions.main(paramsdf)
 		if hpv16error == True:
 			GuiFunctions.showError(self, "No HPV16 sequences were identified. Programme execution has been stopped.")
-		# print(mainW.paramsdf.values)
 		
 		mainW.paramsdf.loc["query"] = query_f_path
-		# print(mainW.paramsdf.values)
 
 		mainW.paramsdf.loc["out", "Value"] = outdir
-		# print(mainW.paramsdf.values)
 		self.finished.emit()
 		return
 
@@ -111,20 +107,21 @@ class MainWindow(QMainWindow):
 		# Remove the content margins from the window
 		self.ui.horizontalLayout.setContentsMargins(0, 0, 0, 0)
 		
-		params = wrapper._defaultparams()
+		params = appFunctions._defaultparams()
 		self.paramsdf = pd.DataFrame.from_dict(params,orient='index')
 		self.paramsdf.rename(columns={0:"Value"},inplace=True)
-		self.binaries = wrapper._init_binaries(sys.platform) # Init some necessary params
+		self.binaries = appFunctions._init_binaries(sys.platform) # Init some necessary params
 		self.openWindows = {}
 
 		# BlastTimer to update the blast progressBars
-		self.cliMainFunctions = wrapper.MainFunctions()
+		self.cliMainFunctions = appFunctions.MainFunctions()
 		self.blastTimer = QTimer()
-		self.blastTimer.timeout.connect(lambda: wrapper.MainFunctions.blastProgress(self.cliMainFunctions))
+		self.blastTimer.timeout.connect(lambda: appFunctions.MainFunctions.blastProgress(self.cliMainFunctions))
 		self.cliMainFunctions.startTimerSignal.connect(lambda: self.blastTimer.start(1000))
 		self.cliMainFunctions.stopTimerSignal.connect(lambda: self.blastTimer.stop())
 		self.cliMainFunctions.pBarIdxSignal.connect(GuiFunctions.selectCurrentPBar)
 		self.cliMainFunctions.countSignal.connect(GuiFunctions.updateProgress)
+		self.cliMainFunctions.errorSignal.connect(lambda x: GuiFunctions.showError(self, x))
 		self.show()
 
 	def Button(self):
@@ -155,9 +152,6 @@ class MainWindow(QMainWindow):
 			GuiFunctions.loadResDir(self)
 		if btnWidget.objectName() == "runPipelineButton":
 			GuiFunctions.execPipeline(self)
-		if btnWidget.objectName() == "openHelpButton":
-			pass
-			# GuiFunctions.showHelp(self)
 	
 	def closeEvent(self, event):
 		self.quitMsg = QMessageBox()
@@ -229,10 +223,10 @@ class GuiFunctions(MainWindow):
 
 	def addHomeButtons(self):
 		self.homeButtonsObj = ["loadFastaButton", "selectOutdirButton" ,"loadResultsButton",
-		"openHelpButton"		
+		# "openHelpButton"		
 		]
 		self.homeButtonNames = ["Load the fasta file to analyze", "Select directory to write the output",
-		"Load results", "View help videos  (Opens a separate window)"
+		"Load results",# "View help videos  (Opens a separate window)"
 		]
 		indeces = range(len(self.homeButtonsObj))
 		menuSpacer = QSpacerItem(20, 20)
@@ -270,10 +264,10 @@ class GuiFunctions(MainWindow):
 		self.ui.homeMenuGridLayout.addWidget(self.ui.menuLabel)
 
 		self.homeButtonsObj = ["runPipelineButton", "selectOutdirButton" ,"loadResultsButton",
-		"openHelpButton"		
+		#"openHelpButton"		
 		]
 		self.homeButtonNames = ["Execute the pipeline", "Select directory to write the output",
-		"Load results", "View help videos  (Opens a separate window)"
+		"Load results", #"View help videos  (Opens a separate window)"
 		]
 		# self.homeButtons = []
 		indeces = range(len(self.homeButtonsObj))
@@ -378,7 +372,6 @@ class GuiFunctions(MainWindow):
 			return
 		else:
 			int_params = ("num_threads", "SNP_identification_Word_Size", "Gene_identification_Word_size")
-			float_params = ()
 			mainW.outdir = pathlib.Path(response)
 			mainW.paramsdf.loc["out"] = str(mainW.outdir)
 			logfile = mainW.outdir / pathlib.Path(".logfile.log")
@@ -398,11 +391,28 @@ class GuiFunctions(MainWindow):
 					if index in int_params:
 						val = int(val)
 					mainW.paramsdf.loc[index] = val
-
+			
 			mainW.fasta_path = mainW.paramsdf.loc["query","Value"]
 			if mainW.outdir != mainW.fasta_path.parent:
 				mainW.paramsdf.loc["query","Value"] = mainW.outdir / mainW.fasta_path.name
 				mainW.fasta_path = mainW.paramsdf.loc["query","Value"]
+			tmpdir = mainW.outdir / ".tmp" 
+			if tmpdir.exists() == False:
+				tmpdir.mkdir()
+			# Check if outdir has all the needed items
+			child_count = 0
+			for _ in mainW.outdir.iterdir():
+				child_count += 1
+			if child_count < 12:
+				msg = """
+				The selected directory is missing some necessary files <br>
+				This could be the result of one of the following: <br>
+				1. Unexpected termination of the pipeline <br>
+				2. User error (e.x. removing a file or a folder) <br><br>
+				The removed files/folders must be recovered or the pipeline must be executed
+				"""
+				GuiFunctions.showError(self, msg)
+				return 
 			mainW.totalSequenceRecDict = SeqIO.index(str(mainW.fasta_path),"fasta")
 			mainW.analyzedSeqs = list(mainW.totalSequenceRecDict.keys())
 			GuiFunctions.removeMenu(self, "Results") # Just in case this is not the first time the user loads the results
@@ -478,24 +488,28 @@ class GuiFunctions(MainWindow):
 		self.trees_dir = self.outdir/"Phylogenetic_Trees"
 		self.trees_l = os.listdir(self.trees_dir)
 		self.trees_l = [pathlib.Path(self.trees_dir) / t for t in self.trees_l]
-		if len(self.trees_l) == 0:
-			pass
-			# Throwing two errors makes the app crash
-			# Should be different threads
-			# GuiFunctions.showError(self, "No tree (newick) files have been found", "Information")
-		else:
-			self.trees = {}
-			for t in self.trees_l:
-				self.trees[t.name.replace("_aln_NJ_tree.nwk","")] = Tree(str(t))
-			# TODO: Maybe optimize for memory?
+		self.trees = {}
+		for t in self.trees_l:
+			self.trees[t.name.replace("_aln_NJ_tree.nwk","")] = Tree(str(t))
 		mainW.ui.translateResultsUI(self)
-		self.putRecSeqs = GuiFunctions.loadRecList(self)
+		self.putRecSeqs = GuiFunctions.loadSeqList(self, "putativeRecombinants.txt")
 		num_of_recombinants = len(self.putRecSeqs)
-		if  num_of_recombinants == 1:
-			GuiFunctions.showError(self, F"{num_of_recombinants} putative recombinant has been found", "Information")
+		self.nonHPV16 = GuiFunctions.loadSeqList(self, "nonHPV16.txt")
+		num_of_nonHPV16 = len(self.nonHPV16)
+		
+		infoMsg = ""
+		if  num_of_nonHPV16 == 1:
+			nonHPV16Msg = "1 non-HPV16 sequence has been found and removed"
 		else:
-			GuiFunctions.showError(self, F"{num_of_recombinants} putative recombinants have been found", "Information")
+			nonHPV16Msg = F"{num_of_nonHPV16} non-HPV16 sequences have been found and removed"
+		if  num_of_recombinants == 1:
+			recMsg = "1 putative recombinant sequence has been found"
+		else:
+			recMsg = F"{num_of_recombinants} putative recombinant sequences have been found"
+		infoMsg = "<br>".join([nonHPV16Msg, "<br>", recMsg])
+		GuiFunctions.showError(self, infoMsg, "Information")
 		return
+
 
 	def updateListWidget(self) -> None:
 		"""
@@ -553,7 +567,7 @@ class GuiFunctions(MainWindow):
 				tmpdf = mainW.dfCancerSnp[mainW.dfCancerSnp["Query sequence"] == mainW.selectedSeq]
 				tmpdf.sort_values(by=["Query position"],inplace=True,ignore_index=True)
 				tmpdf.drop("Unnamed: 0",axis=1, inplace=True)
-				tmpdf = tmpdf[["SNP","Query nucleotide", "Query position", "E-value"]]
+				tmpdf = tmpdf[["Reference genome position", "Cancer SNP","Query nucleotide", "Query position", "E-value"]]
 			if tableName == "lineageSumsTable":
 				tmp = tmpdf["Proportion"].values
 				zeroes = 0
@@ -610,15 +624,15 @@ class GuiFunctions(MainWindow):
 				)
 				fig.update_layout(height=200, legend_y=1.5)
 			if browserName == "lineageSnpBrowser":
-				tmpdf = mainW.dfLineageSnp[mainW.dfLineageSnp.index == mainW.selectedSeq]
+				tmpdf = mainW.dfLineageSnp.loc[(mainW.dfLineageSnp.index == mainW.selectedSeq)]
 				tmpdf = tmpdf.T.head(67) # num of lineage specific snps
-				tmpdf.columns=["Nucleotide","Lineage"]
+				tmpdf.columns=["Lineage"]
 				tmpdf["SNP reference pos"] = tmpdf.index
 				tmpdf["SNP reference pos"] = tmpdf["SNP reference pos"].apply(lambda x: int(x.split("_")[2]) )
 				tmpdf.index = range(len(tmpdf))
 				tmpdf["Query sequence"] = mainW.selectedSeq
 				fig = px.scatter(tmpdf, x="SNP reference pos", y="Query sequence", color="Lineage",
-				hover_data=["SNP reference pos","Lineage","Nucleotide"], 
+				hover_data=["SNP reference pos","Lineage"], 
 				color_discrete_map=mainW.lineageSpecificSnpColorDict
 				)
 				fig.update_layout(xaxis_type = 'linear', height=200, legend_y=1.5)
@@ -628,8 +642,7 @@ class GuiFunctions(MainWindow):
 
 	def displayCancerSnpInfo(self: QTableWidgetItem) -> None:
 		cSnp = mainW.ui.cancerSnpTable.item(self.row(),0).text()
-		m = re.match(r"(\S+_NuclPos_\d+).+", cSnp)
-		cSnp = m.group(1) + ".md"
+		cSnp = cSnp + ".md"
 		mainW.ui.cancerSnpTextBrowser.setSearchPaths([str(pathlib.Path(__file__).parent / pathlib.Path("resources") / "cSNPinfo")])
 		mainW.ui.cancerSnpTextBrowser.setSource(QUrl(cSnp))
 		mainW.ui.cancerSnpTextBrowser.setAlignment(Qt.AlignJustify)
@@ -696,6 +709,9 @@ class GuiFunctions(MainWindow):
 		return
 
 	def createSimplot(self) -> None:
+		if hasattr(mainW, "selectedSeq") == False:
+			GuiFunctions.showError(self, F"Please select a sequence first")
+			return
 		mainW.tmpOut = mainW.outdir / ".tmp"
 		mainW.aln_f = simplot.align(
 			mainW.muscle_bin, mainW.simplotDBFasta, 
@@ -712,6 +728,9 @@ class GuiFunctions(MainWindow):
 		return 
 
 	def saveGraphics(self) -> None:
+		if hasattr(mainW, "selectedSeq") == False:
+			GuiFunctions.showError(self, F"Please select a sequence first")
+			return
 		for i in range(len(mainW.ui.graphicsList)):
 			fig = mainW.ui.graphicsList[i]
 			name = pathlib.Path(mainW.outdir) / pathlib.Path("Graphics")
@@ -723,41 +742,11 @@ class GuiFunctions(MainWindow):
 			fig.write_html(str(name),include_plotlyjs='cdn')
 		return
 
-	def loadRecList(self) -> list:
-		f = mainW.outdir / "putativeRecombinants.txt"
+	def loadSeqList(self, file) -> list:
+		f = mainW.outdir / file
 		fin = open(str(f),"r")
 		recList = [line.rstrip() for line in fin.readlines()]
 		return recList
-
-class LogWindow(QMainWindow):
-	def __init__(self, parent=None):
-		super().__init__(parent)
-		self.resize(300,300)
-		self.setMinimumSize(300,300)
-		self.setWindowTitle("Log Window")
-		self.setStyleSheet(
-			"""
-			background-color: rgb(44, 49, 60);
-			color: rgb(210, 210, 210);
-			"""
-		)
-		self.centralWidget = QLabel("Hello world")
-		self.centralWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-		self.setCentralWidget(self.centralWidget)
-		
-		self.pipelineWidget = QLabel("Executing pipeline... please wait")
-		self.pipelineWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-
-		self.finishedWidget = QLabel("Finished! \n Please don't delete the (hidden) logfile.log \n You can safely close this window")
-		self.finishedWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-		
-		self.widgets = {
-			"pipelineWidget" : self.pipelineWidget,
-			"finishedWidget" : self.finishedWidget,
-			"progressWidget" : None
-		}
-		mainW.openWindows["log"] = self
-		self.show()
 
 class Simplot_page(QMainWindow):
 	def __init__(self, sequence, window_size, step, aln_f, parent=None):
@@ -786,6 +775,8 @@ class Simplot_page(QMainWindow):
 		
 		# Initialize plot
 		self.plot = self.simplotGraphWidget.addPlot()
+		self.plot.setYRange(75,101)
+		# self.plot.axes['left']['item'].tickValues(70,100,1)
 		self.graphicsLayoutWidgetlayout = self.simplotGraphWidget.addLayout()
 
 		# Create extra view boxes to put the legend etc
@@ -875,7 +866,7 @@ class Ui_MainWindow(QMainWindow):
 	def setupUi(self, MainWindow):
 		MainWindow.resize(1000, 720)
 		MainWindow.setMinimumSize(QSize(1000, 720))
-		MainWindow.setWindowTitle("HPV-16 genotyper")
+		MainWindow.setWindowTitle("HPV16-Genotyper")
 	   
 		# Fonts
 		self.font1 = QFont("Segoe UI", pointSize= 12, weight= 75)
@@ -1011,7 +1002,7 @@ class Ui_MainWindow(QMainWindow):
 		self.progressPageGridLayout.addItem(spacer)
 		
 		self.statusLines = ["HPV-16 filtering", "Gene Identification", 
-			"Lineage specific SNPs scan", "cancer specific SNPs scan",
+			"Lineage specific SNPs scan", "Cancer specific SNPs scan",
 			"Gene alignment", "Trees calculation"
 		]
 		
@@ -1389,7 +1380,7 @@ class Ui_MainWindow(QMainWindow):
 
 	def retranslateUi(self, MainWindow):
 		self.pageNameInfo.setText(QCoreApplication.translate("MainWindow", f" Viewing - HOME", None))
-		self.toolLabel.setText(QCoreApplication.translate("MainWindow", "HPV-16 genotyper ", None))
+		self.toolLabel.setText(QCoreApplication.translate("MainWindow", "HPV16-Genotyper ", None))
 		self.menuLabel.setText(QCoreApplication.translate("MainWindow", "Please use the following menu", None))
 		self.orLabel.setText(QCoreApplication.translate("MainWindow", "OR", None))
 
@@ -1643,7 +1634,6 @@ class Style():
 			 background: none;
 		}
 		"""
-		#TODO: Implement this
 	)
 	style_text_browser = (
 		"""
@@ -1787,6 +1777,7 @@ class Style():
 
 
 if __name__ == "__main__":
+	pd.options.mode.chained_assignment = None
 	app = QApplication(sys.argv)
 	mainW = MainWindow()
 	QFontDatabase.addApplicationFont('fonts/segoeui.ttf')

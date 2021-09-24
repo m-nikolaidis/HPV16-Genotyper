@@ -78,9 +78,11 @@ src/.vscode
 # Custom folders and files
 input
 ideas
-Script_out/*
-src/Script_out/*
-src/resources
+src/Results_directory/*
+src/resources/*
+src/TODO.md
+src/test*.py
+src/misc/exampleData.fa
 config_files
 problematicCancerSNPs/*
 *.ai

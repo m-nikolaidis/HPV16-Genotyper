@@ -1,124 +1,43 @@
-# The tool
-The tool in CLI has been tested to run in Linux, WSL and Windows (W10).
-CHeck in new install of windows if the binaries run correctly
-----------------------------------------------------------------------
+# HPV16-Genotyper: A Computational Tool for Risk-Assessment, Lineage Genotyping and Recombination Detection in HPV16 Sequences, Based on a Large-Scale Evolutionary Analysis
 
+<p style="text-align: justify;">
+HPV16-Genotyper is a computational tool developed in 
+Python that automates the entire process described in our <a href="#publication"> publication </a>  and performs genotyping, quality control of genome assembly, detection of recombination events and detection of cancer-related SNPs. The software was tested on 180 representative genomes and was validated for proper performance. The entire analysis took <b><u>16 min</u></b> on a personal Linux
+laptop with eight cores (2.4 GHz)
+</p>
 
-## Requirements
-### Windows
-No requirements
-### Linux
-The application has some requirement in Linux systems depending on the OS version
-* In all versions the libflt1.3 library needs to be installed either via
-	1. `sudo apt-get install libfltk1.3*`
-	or
-	2. running the script runHPV16genotyper with parameter **-i**
-* In 18.04 
-* In 16.04
-	The user also needs to install xcb library? # Maybe use another?
-	Check prometheus history
+<p style="text-align: justify;">
+A summary of the workflow is shown in <b>Figure 1</b>.
+<a href="#image-1">Figure 2</a> shows an example of the phylogenetic and recombination analysis of the HPV16 strain with accession number
+<a href="https://www.ncbi.nlm.nih.gov/nuccore/MT316214">MT316214.1</a> is described in detail the HPV16-Genotyper tool.
+</p>
 
+## Publication
+The research paper was published in 2021 and can be found [here](https://doi.org/10.3390/d13100497).
 
+## Pictures
+![figure1](pics/Tool_workflow.jpg)
+***Figure 1.** A workflow of the HPV16-genotyper tool.*
 
-# Use DataFrame.to_markdown for the parameters excel
+![figure2](pics/Tool_results.jpg)
+<p style="text-align: justify">
+<i><b>Figure 2.</b> The HPV16-Genotyper tool has three GUI components (A-C). The first component is the main results page. A1 is the status bar, where the user obtains information about the currently displayed page. A2 are the total pages available (Home and Results). The first frame of the results page contains A3, a list of all the analyzed sequences. By double clicking the name of one sequence, the page updates with the corresponding ifnormation. By checking the button A4, the list displays only the putative recombinants identified in the analysis. The next frame contains information about 9 SNPs associated with an increased risk of cancer (A5) and click on any of the identified SNPs displays information (A6) about that specific SNP. A7 shows the lineage-specific SNPs identified in the selected sequence and this information is summarized in graph A8. BLAST results for each gene are shown in table A9 and summarized in graph A10. In the frame A11, the user has the option to view the phylogenetic tree for each gene. In case the selected sequence does not contain the selected gene, an error message will be displayed. The A12 frame gives the option to create the similarity plot of the selected sequence. A13 saves A8 and A10 on the output directory. Panel B shows an example interactive tree visualization (made with <a href="https://github.com/etetoolkit/ete">ETE3</a>) where B1 is the gene label, B2 shows the different reference sequences which are colored based on their lineage and B3 shows the selected sequence which will always be colored gray. Panel C shows an example similarity plot window. C1 is the plot description, C2 is the similarity plot, C3 is the plot legend and C4 is a button that can save the page in JPG format. </i>
+</p>
 
-# Write in MD, that the user should have the required priviledges in the chosen output directory
+## Installing
 
-From params.py
-""" To write in .md
-	systems supported at the moment: Linux, WSL
-	The script can be installed in whatever folder that has user privileges
-	input directory for files is script/../input by default
-	Evalue notation accepts both scientific and floating point (due to pandas)
-	Word_size should be int >= 4
-	num_threads is system threads - 2 by default
-	Currently using blast+ 2.11.0 #TODO: Update, 2.12
-	All the files should be put in the desired input directory, except for the params excel. which can be wherever
-	The database and query should be only the file names. Not the paths
-	Do not delete the first line of the excel file that has the word Value. It is needed by the script
-	TODO: the annotation should be given only as the file name, not the whole directory
-"""
+The software is precompiled and ready to use for [Windows 10](http://bioinf.bio.uth.gr/downloads/HPV16-genotyperWin10.zip) and [Ubuntu 20](http://bioinf.bio.uth.gr/downloads/HPV16-genotyperUb20.tar.gz).
+More information and a help video can be found on our laboratory's [website](http://bioinf.bio.uth.gr)  "Tools" section.
 
+### Requirements
 
-## Blastn
-"""Write in md:
-oufmt columns can be altered based on user needs directly from the excel params file.
-The addition of the text should be in the same cell and separated by spaces
-The raw blast_results are automatically turned into an excel file for ease of interpretation (The txt file is also kept)
-The script will read either the csv or the excel file, whichever is available. If none is, it will throw an error
-TODO: Add list of all possibilities for non-cli users
+* #### Windows
 
-Add something about the workflow on the MD file?
-"""
+  No requirements
 
-### Recombinant sequences
-Recombinant sequences are considered sequences with conflicting lineaeges in the gene identification results
+* #### Ubuntu
 
-# Phylogeny
-## Profile alignment
-We are using muscle profile alignment to save computational time and storage space.
-Muscle and seaview binaries are taken from wsl compiles. Work on WSL. 
-Check versions to add to MD
-
-## Trees
-Trees are built with PhyML by default
-
-# SNP Annotation
-## Create SNP annotation file
-Input excel must have the specific format
-Ref genomic position	A	B	C	D
-The first column should always be the reference genomic position (e.x. NC_001526 genomic position)
-NC_001526 genomic position	A	B	C	D
-286	T	A	A	A
-289	A	G	G	G
-335	C	T	T	T
-
-make the above thing a table
-
-create_annot_file function:
-Prefix and empty should be provided from user, default Lin_, Other
-
-# Graphical outputs
-SNP graphical outputs are a bit buggy in the windows execution
-TODO: Need to investigate
-## Gene best hits
- requires an active internet connection to view the plotly graphs
-
-## SNPs
-This plot renames all the SNPs (Non A,B,C,D, BCD) who are not specified in color_dict as Other
-requires an active internet connection to view the plotly graphs
-
-## Tree visualizations (interactive)
-
-## Tree rendering
-
-# The time consuming functions have on-off switch
-Blastn search and phylogentic tree construction
-Going to use them as checkpoints
-
-
-
-# Used parameters
-Check if the provided gene sequence has many Ns and filter the parent organism from the analysis
-Default N_perc=50%
-
-If more than 20 organisms are in the filtered input, then the BioNJ method will be used
-
-Also filtering the non HPV-16 genomes
-
-
-# output 
-If no output directory is specified the results are thrown into the script directory with the Fasta input
-
-filename prefix (without the extension) and the current date
-
-# lineage snp graph
-This graph is showing the A,B,C,D specfic SNPs and the BCD specific
-So we can divide the A from the non-A
-
-# Recombinant identification
-Use the cut-offs to identify putative recombinants / artifacts in the analysis
-Gene identificatio cut-off: Atleast 1 gene with different main lineage
-Lineage specific SNPs: 3 or more SNPs other than the dominant lineage
-
-
+  The application needs the libflt1.3 library, which can be installed via:
+  1. `sudo apt-get install libfltk1.3*`
+  or
+  2. running the script <u>runHPV16genotyper</u>, found inside the        installation folder, with parameter **-i** (Needs sudo priviledge)

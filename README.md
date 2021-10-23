@@ -2,20 +2,17 @@
 
 <p style="text-align: justify;">
 HPV16-Genotyper is a computational tool developed in 
-Python that automates the entire process described in our <a href="#publication"> publication </a>  and performs genotyping, quality control of genome assembly, detection of recombination events and detection of cancer-related SNPs. The software was tested on 180 representative genomes and was validated for proper performance. The entire analysis took <b><u>16 min</u></b> on a personal Linux
+Python that automates the entire process described in our <a href="https://doi.org/10.3390/d13100497"> publication </a>  and performs genotyping, quality control of genome assembly, detection of recombination events and detection of cancer-related SNPs. The software was tested on 180 representative genomes and was validated for proper performance. The entire analysis took <b><u>16 min</u></b> on a personal Linux
 laptop with eight cores (2.4 GHz)
 </p>
 
 <p style="text-align: justify;">
-A summary of the workflow is shown in <b>Figure 1</b>.
-<a href="#image-1">Figure 2</a> shows an example of the phylogenetic and recombination analysis of the HPV16 strain with accession number
+A summary of the workflow is shown in <a href="#figures">Figure 1</a>.
+<a href="#figures">Figure 2</a> shows an example of the phylogenetic and recombination analysis of the HPV16 strain with accession number
 <a href="https://www.ncbi.nlm.nih.gov/nuccore/MT316214">MT316214.1</a> is described in detail the HPV16-Genotyper tool.
 </p>
 
-## Publication
-The research paper was published in 2021 and can be found [here](https://doi.org/10.3390/d13100497).
-
-## Pictures
+## Figures
 ![figure1](pics/Tool_workflow.jpg)
 ***Figure 1.** A workflow of the HPV16-genotyper tool.*
 
@@ -27,9 +24,9 @@ The research paper was published in 2021 and can be found [here](https://doi.org
 ## Installing
 
 The software is precompiled and ready to use for [Windows 10](http://bioinf.bio.uth.gr/downloads/HPV16-genotyperWin10.zip) and [Ubuntu 20](http://bioinf.bio.uth.gr/downloads/HPV16-genotyperUb20.tar.gz).
-More information and a help video can be found on our laboratory's [website](http://bioinf.bio.uth.gr)  "Tools" section.
+More information and a help video can be found in our laboratory's [website](http://bioinf.bio.uth.gr/hpv16-genotyper.html)
 
-### Requirements
+## Requirements
 
 * #### Windows
 

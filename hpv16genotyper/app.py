@@ -17,11 +17,13 @@ import os
 import re
 import sys
 import ctypes
-import appFunctions # Tool module
-import simplot # Tool module
+if __package__:
+	from . import appFunctions, simplot, files_rc
+else:
+	import appFunctions # Tool module
+	import simplot # Tool module
 import pathlib
 import logging
-import files_rc
 import pandas as pd
 import pyqtgraph as pg
 import plotly.express as px
@@ -1776,13 +1778,19 @@ class Style():
 	)
 
 
-if __name__ == "__main__":
+def main() -> int:
 	pd.options.mode.chained_assignment = None
+	global mainW, screen
 	app = QApplication(sys.argv)
 	mainW = MainWindow()
-	QFontDatabase.addApplicationFont('fonts/segoeui.ttf')
-	QFontDatabase.addApplicationFont('fonts/segoeuib.ttf')
+	font_dir = pathlib.Path(__file__).resolve().parent / "fonts"
+	QFontDatabase.addApplicationFont(str(font_dir / "segoeui.ttf"))
+	QFontDatabase.addApplicationFont(str(font_dir / "segoeuib.ttf"))
 	screen = app.primaryScreen()
 	if "win" in sys.platform:
 		ctypes.windll.user32.ShowWindow( ctypes.windll.kernel32.GetConsoleWindow(), 6)
-	sys.exit(app.exec_())
+	return app.exec_()
+
+
+if __name__ == "__main__":
+	sys.exit(main())

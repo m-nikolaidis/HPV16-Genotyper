@@ -33,7 +33,10 @@ def align(muscle_bin, db_gene_f, seqs_dict, recseq, outpath):
 
 def calculate_similarities(qseq, aln_f, step, window):
 	"""
-	Seq is the query sequence based on which the similarities are calculated
+	Seq is the query sequence based on which the similarities are calculated.
+	Returned positions are zero-based alignment-column midpoints: a window
+	covering columns ``pos:pos + window`` is reported at
+	``pos + (window - 1) / 2``.
 	"""
 	results = {}
 	def _distance(seq1, seq2, ignore_gaps=False):
@@ -50,7 +53,7 @@ def calculate_similarities(qseq, aln_f, step, window):
 			seqsize += 1
 			if char1 != char2:
 				dissimilar += 1
-		return round(dissimilar/seqsize,3)
+		return dissimilar/seqsize
 	
 	aln = AlignIO.read(aln_f,"fasta")
 	indeces = list(range(len(aln)))
@@ -67,16 +70,10 @@ def calculate_similarities(qseq, aln_f, step, window):
 		db_name = aln[idx].id
 		results[db_name] = []
 		pos = 0
-		while pos < aln_len:
-			positions.append(pos)
-			#TODO: For some reason the simplot in the end is different from Simplot software and TRECS
-			# Maybe they ditch the if TRUE condition?
-			if pos+window+1 > aln_len:
-				seq1 = str(aln[qidx, pos:aln_len].seq) 
-				seq2 = str(aln[idx , pos:aln_len].seq)
-			else:
-				seq1 = str(aln[qidx, pos:pos+window+1].seq)
-				seq2 = str(aln[idx , pos:pos+window+1].seq)
+		while pos + window <= aln_len:
+			positions.append(pos + (window - 1) / 2)
+			seq1 = str(aln[qidx, pos:pos+window].seq)
+			seq2 = str(aln[idx , pos:pos+window].seq)
 			identity = (1 - _distance(seq1,seq2)) * 100
 			results[db_name].append(identity)
 			pos += step

@@ -38,3 +38,14 @@ More information and a help video can be found in our laboratory's [website](htt
   1. `sudo apt-get install libfltk1.3*`
   or
   2. running the script <u>runHPV16genotyper</u>, found inside the        installation folder, with parameter **-i** (Needs sudo priviledge)
+
+## Running from source
+
+From the project root, install the Python dependencies and launch the GUI as a module:
+
+```bash
+python -m pip install -r requirements.txt
+python -m hpv16genotyper
+```
+
+The workflow also requires the external BLAST+, MUSCLE, and SeaView executables configured by the application.

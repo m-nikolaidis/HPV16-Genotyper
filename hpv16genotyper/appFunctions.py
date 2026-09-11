@@ -847,63 +847,39 @@ class MainFunctions(QObject):
         self,
         outdir: pathlib.Path,
         aln_files: list,
-        seaview_bin: str,
+        fasttree_bin: str,
         threads: int,
-        method: str = "BioNJ",
-        dist: str = "Kimura",
-        nj_bootstrap_repl: int = 100,
         exe: bool = True,
     ) -> pathlib.Path:
         """
-        Compute the Neighbour joining phylogenetic trees with
-        predefined parameters
+        Compute phylogenetic trees with FastTree.
         """
         if not exe:
             trees_dir = outdir / pathlib.Path("Phylogenetic_Trees")
             return trees_dir
 
-        def _clean_nj_output(tree_f: pathlib.Path, nj_regex: re.compile) -> None:
-            """
-            Removes the leading info generated from SeaView in CLI mode
-            ----> [NJ \d+ sites Kimura \d+ repl.] <----
-            """
-            text = tree_f.read_text()
-            m = re.match(nj_regex, text)
-            new_text = m.group(1)
-            tree_f.write_text(new_text)
-
         trees_dir = outdir / pathlib.Path("Phylogenetic_Trees")
-        logging.info(f"Initiating {method} tree calculation")
-        if method == "BioNJ":
+        logging.info("Initiating FastTree tree calculation")
 
-            def _treeFunc(aln_f):
-                tree_file_out = trees_dir / (aln_f.stem + "_NJ_tree.nwk")
-                arguments = (
-                    " -build_tree -NJ -distance "
-                    + dist
-                    + " -replicates "
-                    + str(nj_bootstrap_repl)
-                    + " -o "
-                    + str(tree_file_out)
-                    + " "
-                    + str(aln_f)
+        def _treeFunc(aln_f):
+            tree_file_out = trees_dir / (aln_f.stem + "_NJ_tree.nwk")
+            with tree_file_out.open("w") as tree_handle:
+                subprocess.run(
+                    [fasttree_bin, "-nt", "-gtr", str(aln_f)],
+                    stdout=tree_handle,
+                    check=True,
                 )
-                self._callMultiThreadProcc(seaview_bin + arguments)
-                return 1
+            return 1
 
-            pool = ThreadPool(threads)
-            nj_regex = re.compile(r"^\[NJ \d+ sites Kimura.+\] (\S+)")
-            self.finishedProcesses = 0
-            total_processes = len(aln_files)
-            done_processes = 0
-            for i in pool.imap_unordered(_treeFunc, aln_files):
-                done_processes += i
-                self.emitSignal(int((done_processes / total_processes) * 100), 5)
-            pool.close()
-            pool.join()
-            for aln_f in aln_files:
-                tree_file_out = trees_dir / (aln_f.stem + "_NJ_tree.nwk")
-                _clean_nj_output(tree_file_out, nj_regex)
+        pool = ThreadPool(threads)
+        self.finishedProcesses = 0
+        total_processes = len(aln_files)
+        done_processes = 0
+        for i in pool.imap_unordered(_treeFunc, aln_files):
+            done_processes += i
+            self.emitSignal(int((done_processes / total_processes) * 100), 5)
+        pool.close()
+        pool.join()
         logging.info(f"Finished")
         return trees_dir
 
@@ -915,7 +891,7 @@ class MainFunctions(QObject):
         indir = pathlib.Path(paramsdf.loc["in", "Value"])
         query_f = pathlib.Path(paramsdf.loc["query", "Value"])
         query_f_path = indir / query_f
-        makeblastdb_bin, blastn_bin, muscle_bin, seaview_bin = _init_binaries(system)
+        makeblastdb_bin, blastn_bin, muscle_bin, fasttree_bin = _init_binaries(system)
         annot_f = pathlib.Path(paramsdf.loc["SNP_annotation_file", "Value"])
         threads = paramsdf.loc["num_threads", "Value"]
 
@@ -1029,7 +1005,7 @@ class MainFunctions(QObject):
             threads=threads,
         )
         self.build_trees(
-            outdir, aln_files, seaview_bin, threads=threads, method="BioNJ"
+            outdir, aln_files, fasttree_bin, threads=threads
         )
         return query_f_path, outdir, hpv16error
 
@@ -1041,7 +1017,7 @@ def _init_binaries(system: sys.platform) -> list:
     executables in a sibling ``bin`` directory below PyInstaller's unpacked
     application root (``sys._MEIPASS``).
     """
-    binary_names = ("makeblastdb", "blastn", "muscle", "seaview")
+    binary_names = ("makeblastdb", "blastn", "muscle", "fasttree")
     executable_suffix = ".exe" if system == "win32" else ""
     meipass = getattr(sys, "_MEIPASS", None)
 

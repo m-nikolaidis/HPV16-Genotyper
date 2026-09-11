@@ -85,6 +85,7 @@ class Worker(QObject):
     """
 
     finished = pyqtSignal()
+    pipelineFinished = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -104,18 +105,44 @@ class Worker(QObject):
         )
 
     def runPipeline(self) -> None:
-        paramsdf = mainW.paramsdf
-        query_f_path, outdir, hpv16error = mainW.cliMainFunctions.main(paramsdf)
-        if hpv16error == True:
-            GuiFunctions.showError(
-                self,
-                "No HPV16 sequences were identified. Programme execution has been stopped.",
-            )
+        success = False
+        try:
+            paramsdf = mainW.paramsdf
+            mainW.cliMainFunctions._error_emitted = False
+            result = mainW.cliMainFunctions.main(paramsdf)
+            if result is None:
+                logging.info("Pipeline stopped during input validation")
+                return
+            if len(result) == 2 and result[1] is True:
+                GuiFunctions.showError(
+                    self,
+                    "No HPV16 sequences were identified. Programme execution has been stopped.",
+                )
+                return
+            if len(result) != 3:
+                raise RuntimeError("Pipeline returned an invalid result")
+            query_f_path, outdir, hpv16error = result
+            if hpv16error is True:
+                GuiFunctions.showError(
+                    self,
+                    "No HPV16 sequences were identified. Programme execution has been stopped.",
+                )
+                return
 
-        mainW.paramsdf.loc["query"] = query_f_path
-
-        mainW.paramsdf.loc["out", "Value"] = outdir
-        self.finished.emit()
+            mainW.paramsdf.loc["query"] = query_f_path
+            mainW.paramsdf.loc["out", "Value"] = outdir
+            success = True
+        except Exception as exc:
+            message = str(exc) or "Pipeline failed"
+            logging.error("Pipeline failed: %s", message)
+            if not getattr(mainW.cliMainFunctions, "_error_emitted", False):
+                mainW.cliMainFunctions.emitSignal(errorMsg=message)
+        finally:
+            # A failed alignment/tree step can happen after BLAST's timer has started.
+            mainW.cliMainFunctions.stopTimer()
+            mainW._pipeline_succeeded = success
+            self.pipelineFinished.emit(success)
+            self.finished.emit()
         return
 
 
@@ -531,16 +558,19 @@ class GuiFunctions(MainWindow):
         Step 6: Start the thread
         Step 7: Clear the central widget and load the results
         """
+        self._pipeline_succeeded = False
         self.thread = QThread()  # Step 2
         self.worker = Worker()  # Step 3
         self.worker.moveToThread(self.thread)  # Step 4
 
         self.thread.started.connect(self.worker.runPipeline)  # Step 5
         # Create a new window for the progress
+        self.worker.pipelineFinished.connect(
+            lambda succeeded: setattr(self, "_pipeline_succeeded", succeeded)
+        )
         self.worker.finished.connect(self.thread.quit)  # Step 5
         self.worker.finished.connect(self.worker.deleteLater)  # Step 5
         self.thread.finished.connect(self.thread.deleteLater)  # Step 5
-        self.thread.start()  # Step 6
         self.thread.finished.connect(
             lambda: mainW.buttons["Main Page"].setEnabled(True)
         )
@@ -555,18 +585,31 @@ class GuiFunctions(MainWindow):
         self.thread.finished.connect(lambda: GuiFunctions.removeMenu(self, "Progress"))
         self.thread.finished.connect(lambda: GuiFunctions.resetProgressBars(self))
         self.thread.finished.connect(lambda: GuiFunctions.resetMainPage(mainW))
-        self.thread.finished.connect(lambda: GuiFunctions.initVariables(self))
         self.thread.finished.connect(
-            lambda: GuiFunctions.addNewMenu(
-                self,
-                "Results",
-                "resultsButton",
-                "url(:/resources/icons/cil-magnifying-glass.png)",
-                True,
+            lambda: (
+                GuiFunctions.initVariables(self) if self._pipeline_succeeded else None
+            )
+        )
+        self.thread.finished.connect(
+            lambda: (
+                GuiFunctions.addNewMenu(
+                    self,
+                    "Results",
+                    "resultsButton",
+                    "url(:/resources/icons/cil-magnifying-glass.png)",
+                    True,
+                )
+                if self._pipeline_succeeded
+                else None
             )
         )  # Step 7
         self.thread.finished.connect(lambda: mainW.showMaximized())
-        self.thread.finished.connect(lambda: mainW.buttons["Results"].click())
+        self.thread.finished.connect(
+            lambda: (
+                mainW.buttons["Results"].click() if self._pipeline_succeeded else None
+            )
+        )
+        self.thread.start()  # Step 6
 
     ##### Results page functions
     def initVariables(self: QMainWindow) -> None:

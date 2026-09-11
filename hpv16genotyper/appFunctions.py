@@ -7,6 +7,7 @@ import pathlib
 import logging
 import subprocess
 import multiprocessing
+from contextlib import contextmanager
 import pandas as pd
 import numpy as np
 from multiprocessing.pool import ThreadPool
@@ -15,6 +16,86 @@ from PyQt5.QtCore import pyqtSignal, QObject
 from Bio import SeqIO
 
 pd.options.mode.chained_assignment = None
+
+
+class ExternalToolError(RuntimeError):
+    """A subprocess failed in a way that can be shown to the user."""
+
+    def __init__(self, tool, command, returncode=None, stderr=None):
+        self.tool = str(tool)
+        self.command = [str(arg) for arg in command]
+        self.returncode = returncode
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode(errors="replace")
+        self.stderr = str(stderr or "").strip()
+        status = (
+            f"exit code {returncode}"
+            if returncode is not None
+            else "could not be started"
+        )
+        detail = _stderr_summary(self.stderr)
+        message = f"{self.tool} failed ({status})"
+        if detail:
+            message += f": {detail}"
+        super().__init__(message)
+
+
+def _stderr_summary(stderr: str, limit: int = 240) -> str:
+    """Collapse tool diagnostics to one concise line for the GUI."""
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode(errors="replace")
+    summary = " ".join(str(stderr).split())
+    if len(summary) > limit:
+        return summary[: limit - 3] + "..."
+    return summary
+
+
+def _run_external(command, tool, **kwargs):
+    """Run an external tool and retain enough diagnostics for the UI/log."""
+    command = [str(arg) for arg in command]
+    kwargs.setdefault("stderr", subprocess.PIPE)
+    kwargs.setdefault("text", True)
+    try:
+        result = subprocess.run(command, check=False, **kwargs)
+    except OSError as exc:
+        error = ExternalToolError(tool, command, stderr=str(exc))
+        logging.error("%s; command=%s", error, command)
+        raise error from exc
+    if result.returncode != 0:
+        error = ExternalToolError(
+            tool,
+            command,
+            returncode=result.returncode,
+            stderr=getattr(result, "stderr", ""),
+        )
+        logging.error("%s; command=%s", error, command)
+        raise error
+    return result
+
+
+@contextmanager
+def _managed_thread_pool(threads):
+    """Close a worker pool on success and terminate it after failures."""
+    pool = ThreadPool(threads)
+    try:
+        yield pool
+    except Exception:
+        pool.terminate()
+        raise
+    else:
+        pool.close()
+    finally:
+        pool.join()
+
+
+@contextmanager
+def _active_timer(functions):
+    """Keep the BLAST progress timer active for the scope of a search."""
+    functions.startTimer()
+    try:
+        yield
+    finally:
+        functions.stopTimer()
 
 
 class MainFunctions(QObject):
@@ -26,6 +107,7 @@ class MainFunctions(QObject):
 
     def __init__(self):
         super().__init__()
+        self._error_emitted = False
 
     def emitSignal(
         self, updateValue: int = None, barIdx: int = None, errorMsg: str = None
@@ -39,6 +121,7 @@ class MainFunctions(QObject):
         if updateValue is not None:
             self.countSignal.emit(updateValue)
         if errorMsg is not None:
+            self._error_emitted = True
             self.errorSignal.emit(errorMsg)
 
     def startTimer(self) -> None:
@@ -307,18 +390,16 @@ class MainFunctions(QObject):
             "no",
         ]
 
-        subprocess.run(makeblastdb_command, check=True)
-        self.blastPool = ThreadPool(1)
+        _run_external(makeblastdb_command, "makeblastdb")
         self.total = total
         self.barIdx = barIdx
-        self.startTimer()  # Send signal to start the blastTimer
-        subprocess.run(blastn_command, check=True)
-        self.blastPool.close()
-        self.blastPool.join()
-        self.stopTimer()  # Send signal to main app to stop the timer
-        self.emitSignal(100, barIdx)
-        logging.info("Finished - BLASTn search ")
-        return self.blastres_f_path
+        with _managed_thread_pool(1) as blast_pool:
+            self.blastPool = blast_pool
+            with _active_timer(self):
+                _run_external(blastn_command, "blastn")
+                self.emitSignal(100, barIdx)
+                logging.info("Finished - BLASTn search ")
+                return self.blastres_f_path
 
     def parse_GeneID_results(
         self, blastres_f_path: pathlib.Path, params: pd.DataFrame, exe: bool = True
@@ -739,14 +820,12 @@ class MainFunctions(QObject):
         fout.write_text(os.linesep.join(recombinants))
 
     def _callMultiThreadProcc(self, cmd):
-        system = sys.platform
-        if system == "win32":
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        """Run one MUSCLE command, preserving direct argument lists."""
+        if isinstance(cmd, str):
+            command = cmd if sys.platform == "win32" else shlex.split(cmd)
         else:
-            p = subprocess.Popen(
-                shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-        p.communicate()
+            command = list(cmd)
+        return _run_external(command, "MUSCLE", stdout=subprocess.PIPE)
 
     def prepare_alns(
         self,
@@ -811,7 +890,6 @@ class MainFunctions(QObject):
         total_processes = len(gene_files)
         done_processes = 0
         aln_out_dir = outdir / pathlib.Path("Alignments")
-        pool = ThreadPool(threads)
         gene_regex = re.compile(r"^\S+_([E|L]\d+).fa$")
 
         def _alnFunc(f):
@@ -823,23 +901,24 @@ class MainFunctions(QObject):
             fout = aln_out_dir / (f.stem + "_aln.fa")
             aln_files.append(fout)
             db_gene_f = profiledb_dir / pathlib.Path(gene + "_profile.fa")
-            arguments = (
-                " -profile -in1 "
-                + str(f)
-                + " -in2 "
-                + str(db_gene_f)
-                + " -quiet -out "
-                + str(fout)
-            )
-
-            self._callMultiThreadProcc(muscle_bin + arguments)
+            command = [
+                muscle_bin,
+                "-profile",
+                "-in1",
+                f,
+                "-in2",
+                db_gene_f,
+                "-quiet",
+                "-out",
+                fout,
+            ]
+            self._callMultiThreadProcc(command)
             return 1
 
-        for i in pool.imap_unordered(_alnFunc, gene_files):
-            done_processes += i
-            self.emitSignal(int((done_processes / total_processes) * 100), 4)
-        pool.close()
-        pool.join()
+        with _managed_thread_pool(threads) as pool:
+            for i in pool.imap_unordered(_alnFunc, gene_files):
+                done_processes += i
+                self.emitSignal(int((done_processes / total_processes) * 100), 4)
         logging.info(f"Finished aligning files")
         return aln_files
 
@@ -864,22 +943,20 @@ class MainFunctions(QObject):
         def _treeFunc(aln_f):
             tree_file_out = trees_dir / (aln_f.stem + "_NJ_tree.nwk")
             with tree_file_out.open("w") as tree_handle:
-                subprocess.run(
-                    [fasttree_bin, "-nt", "-gtr", str(aln_f)],
+                _run_external(
+                    [fasttree_bin, "-nt", "-gtr", aln_f],
+                    "FastTree",
                     stdout=tree_handle,
-                    check=True,
                 )
             return 1
 
-        pool = ThreadPool(threads)
         self.finishedProcesses = 0
         total_processes = len(aln_files)
         done_processes = 0
-        for i in pool.imap_unordered(_treeFunc, aln_files):
-            done_processes += i
-            self.emitSignal(int((done_processes / total_processes) * 100), 5)
-        pool.close()
-        pool.join()
+        with _managed_thread_pool(threads) as pool:
+            for i in pool.imap_unordered(_treeFunc, aln_files):
+                done_processes += i
+                self.emitSignal(int((done_processes / total_processes) * 100), 5)
         logging.info(f"Finished")
         return trees_dir
 

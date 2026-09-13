@@ -132,8 +132,14 @@ class MainFunctions(QObject):
 
     ##### General functions
     def _sort_alphanumeric(self, iteratable: list) -> list:
-        int_convert = lambda text: int(text) if text.isdigit() else text
-        sorting_key = lambda key: [int_convert(c) for c in re.split("([0-9]+)", key)]
+        """Sort an iterable with natural ordering for numeric substrings."""
+
+        def int_convert(text):
+            return int(text) if text.isdigit() else text
+
+        def sorting_key(key):
+            return [int_convert(c) for c in re.split("([0-9]+)", key)]
+
         return sorted(iteratable, key=sorting_key)
 
     ##### Set-up environment
@@ -214,7 +220,7 @@ class MainFunctions(QObject):
             msg = " The input file is not in plain text file format, please check input file and restart the application"
             self.emitSignal(errorMsg=msg)
             return msg
-        logging.info(f"Finished input file integrity check successfully")
+        logging.info("Finished input file integrity check successfully")
         return None
 
     def dir_priviledges(self, path: pathlib.Path) -> str or None:
@@ -629,7 +635,8 @@ class MainFunctions(QObject):
             probedf_cols = self._sort_alphanumeric(probedf_cols)
             probedf = probedf[probedf_cols]
             probedf.index.name = "Sequences"
-            probedf.to_excel(probe_results_path, na_rep="X")
+            probedf = probedf.fillna("X")
+            probedf.to_excel(probe_results_path)
         return probe_results_path
 
     def identify_nonHPV16(self, blastres_f_path: pathlib.Path) -> list:
@@ -701,13 +708,11 @@ class MainFunctions(QObject):
         Probe results is the file that has mapped each nucleotide results of the probe blast
         For the non ATGC character value will be automatically Other
         """
-        xl_engine = "openpyxl"
-        annotdf = pd.read_excel(annot_f, index_col=0, engine=xl_engine)
-        probedf = pd.read_excel(probe_res, index_col=0, engine=xl_engine)
+        annotdf = pd.read_excel(annot_f, index_col=0, engine="openpyxl")
+        probedf = pd.read_excel(probe_res, index_col=0, engine="openpyxl")
         to_replace = {
             "Lin_ABD": "Other",
             "Lin_ABC": "Other",
-            "Lin_ABD": "Other",
             "Lin_ACD": "Other",
         }
         if not exe:
@@ -720,19 +725,15 @@ class MainFunctions(QObject):
         m = re.match(ref_prefix_regex, probedf_first_col)
         ref_prefix = m.group(1)
         tmpl = annotdf.index.to_list()
-        tmpl = [ref_prefix + "_" + str(l) for l in tmpl]
+        tmpl = [ref_prefix + "_" + str(item) for item in tmpl]
         annotdf.index = tmpl  # So i can match the columns of probe results file
 
         annotdict = annotdf.to_dict(orient="index")
 
-        possible_nucl_chars = list(
-            np.unique(probedf.values)
-        )  # Non ATGC characters will be automatically value to empty
-
+        possible_nucl_chars = list(np.unique(probedf.values))
         for char in possible_nucl_chars:
-            if char == "A" or char == "T" or char == "G" or char == "C":
-                pass
-            else:
+            # Non ATGC characters will be automatically value to empty
+            if char not in {"A", "T", "G", "C"}:
                 for probe in annotdict:
                     annotdict[probe][char] = empty
         probedf = probedf.replace(annotdict)
@@ -766,8 +767,8 @@ class MainFunctions(QObject):
         # tmpdf = pd.concat([tmpdf,probedf_cp])
         tmpdf = pd.concat([tmpdf, probedf])
         tmpdf.index.name = "Query sequence"
-        tmpdf.fillna("X", inplace=True)
-        tmpdf.to_excel(probe_res, engine=xl_engine)
+        # tmpdf.fillna("X", inplace=True)
+        tmpdf.to_excel(probe_res, engine="openpyxl")
         return num_snps, tmpdf
 
     def find_recombinants(
@@ -867,7 +868,7 @@ class MainFunctions(QObject):
                     final_seqs[gene][org] = seq
             return final_seqs
 
-        logging.info(f"Creating the alignment files for each gene")
+        logging.info("Creating the alignment files for each gene")
         coords_df = pd.read_excel(geneid_blast_res_xls, engine="openpyxl")
         # TODO: Check for efficiency https://pandas.pydata.org/pandas-docs/stable/user_guide/scale.html
         batch_genes_dir = outdir / pathlib.Path(".tmp") / pathlib.Path("Gene_seqs")
@@ -919,7 +920,7 @@ class MainFunctions(QObject):
             for i in pool.imap_unordered(_alnFunc, gene_files):
                 done_processes += i
                 self.emitSignal(int((done_processes / total_processes) * 100), 4)
-        logging.info(f"Finished aligning files")
+        logging.info("Finished aligning files")
         return aln_files
 
     def build_trees(
@@ -957,7 +958,7 @@ class MainFunctions(QObject):
             for i in pool.imap_unordered(_treeFunc, aln_files):
                 done_processes += i
                 self.emitSignal(int((done_processes / total_processes) * 100), 5)
-        logging.info(f"Finished")
+        logging.info("Finished")
         return trees_dir
 
     def main(self, paramsdf: pd.DataFrame, exe: bool = True) -> pathlib.Path:
@@ -976,17 +977,17 @@ class MainFunctions(QObject):
         priviledgeMsg = self.dir_priviledges(outdir)
         existMsg = self.file_exists(query_f_path)
         fmtMsg = self.input_file_format(query_f_path)
-        if priviledgeMsg != None or existMsg != None or fmtMsg != None:
+        if priviledgeMsg is not None or existMsg is not None or fmtMsg is not None:
             return None
         outdir = self.create_dirs(outdir)
         paramsdf.loc["out", "Value"] = outdir
 
         # Grab the root logger instance and use it for logging
-        logfile = outdir / pathlib.Path(".logfile.log")
+        logfile = outdir / "logfile.log"
         # logging.config.fileConfig(str(logfile))
         logging.getLogger().handlers.clear()
         logger = logging.getLogger()
-        fhandler = logging.FileHandler(filename=logfile, encoding="UTF-8")
+        fhandler = logging.FileHandler(filename=logfile, encoding="UTF-8", mode="w")
         formatter = logging.Formatter("%(asctime)s\t%(message)s")
         fhandler.setFormatter(formatter)
         logger.addHandler(fhandler)
@@ -1042,6 +1043,7 @@ class MainFunctions(QObject):
         )
 
         workflow = "snp"
+        logging.debug("Workflow SNP")
         snp_blastn_res_path = self.blastn_search(
             paramsdf,
             query_f_path,
@@ -1050,9 +1052,11 @@ class MainFunctions(QObject):
             blastn_bin,
             query_orgs_num,
         )
+        logging.debug("Workflow SNP - Parse")
         snp_blastn_res_path_xlsx = self.parse_SNP_results(
             snp_blastn_res_path, query_f_index, exe=exe
         )
+        logging.debug("Workflow SNP - Annot")
         _, snpDFannot = self.annotate_results(
             annot_f, snp_blastn_res_path_xlsx, exe=exe
         )
@@ -1066,9 +1070,11 @@ class MainFunctions(QObject):
             blastn_bin,
             query_orgs_num,
         )
+        logging.debug("Workflow cancer SNP - parse")
         self.parse_SNP_results(
             C_snp_blastn_res_path, query_f_index, exe=exe, cancer=True
         )
+        logging.debug("Workflow cancer SNP - find recombinants")
         self.find_recombinants(blastDF, snpDFannot, outdir)
 
         # Gene alignments and trees
@@ -1081,9 +1087,7 @@ class MainFunctions(QObject):
             profiledb_dir,
             threads=threads,
         )
-        self.build_trees(
-            outdir, aln_files, fasttree_bin, threads=threads
-        )
+        self.build_trees(outdir, aln_files, fasttree_bin, threads=threads)
         return query_f_path, outdir, hpv16error
 
 

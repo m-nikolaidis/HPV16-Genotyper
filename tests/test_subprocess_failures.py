@@ -94,7 +94,9 @@ class ExternalToolFailureTests(unittest.TestCase):
 
             def run(command, tool, **kwargs):
                 if tool == "blastn":
-                    raise appFunctions.ExternalToolError(tool, command, 3, "query failed")
+                    raise appFunctions.ExternalToolError(
+                        tool, command, 3, "query failed"
+                    )
                 return None
 
             with patch.object(appFunctions, "ThreadPool", return_value=pool):

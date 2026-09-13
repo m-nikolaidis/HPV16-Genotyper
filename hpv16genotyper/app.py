@@ -19,7 +19,7 @@ import sys
 import ctypes
 
 if __package__:
-    from . import appFunctions, simplot, files_rc
+    from . import appFunctions, simplot
 else:
     import appFunctions  # Tool module
     import simplot  # Tool module
@@ -70,7 +70,7 @@ from PyQt5.QtWidgets import (
     QErrorMessage,
 )
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from ete3 import Tree, TreeStyle, TextFace, NodeStyle
+from ete3 import Tree, TreeStyle, TextFace
 
 
 class Worker(QObject):
@@ -107,7 +107,7 @@ class Worker(QObject):
     def runPipeline(self) -> None:
         success = False
         try:
-            paramsdf = mainW.paramsdf
+            paramsdf = mainW.paramsdf.copy()
             mainW.cliMainFunctions._error_emitted = False
             result = mainW.cliMainFunctions.main(paramsdf)
             if result is None:
@@ -118,16 +118,16 @@ class Worker(QObject):
                     self,
                     "No HPV16 sequences were identified. Programme execution has been stopped.",
                 )
-                return
+                return None
             if len(result) != 3:
                 raise RuntimeError("Pipeline returned an invalid result")
             query_f_path, outdir, hpv16error = result
-            if hpv16error is True:
+            if hpv16error:
                 GuiFunctions.showError(
                     self,
                     "No HPV16 sequences were identified. Programme execution has been stopped.",
                 )
-                return
+                return None
 
             mainW.paramsdf.loc["query"] = query_f_path
             mainW.paramsdf.loc["out", "Value"] = outdir
@@ -346,7 +346,7 @@ class GuiFunctions(MainWindow):
     def enablePipeline(self):
         # Delete all the existing widgets
         for i in reversed(range(self.ui.homeMenuGridLayout.count())):
-            if self.ui.homeMenuGridLayout.itemAt(i).widget() != None:
+            if self.ui.homeMenuGridLayout.itemAt(i).widget() is not None:
                 self.ui.homeMenuGridLayout.itemAt(i).widget().setParent(None)
 
         self.ui.homeMenuGridLayout.addWidget(self.ui.toolLabel)
@@ -399,7 +399,7 @@ class GuiFunctions(MainWindow):
 
     def resetMainPage(self) -> None:
         for i in reversed(range(self.ui.homeMenuGridLayout.count())):
-            if self.ui.homeMenuGridLayout.itemAt(i).widget() != None:
+            if self.ui.homeMenuGridLayout.itemAt(i).widget() is not None:
                 self.ui.homeMenuGridLayout.itemAt(i).widget().setParent(None)
         self.ui.homeMenuGridLayout.addWidget(self.ui.toolLabel)
         self.ui.homeMenuGridLayout.addWidget(self.ui.menuLabel)
@@ -486,10 +486,10 @@ class GuiFunctions(MainWindow):
             mainW.outdir = pathlib.Path(response)
             mainW.paramsdf.loc["out"] = str(mainW.outdir)
             logfile = mainW.outdir / pathlib.Path(".logfile.log")
-            if logfile.exists() == False:
+            if not logfile.exists():
                 GuiFunctions.showError(
                     self,
-                    f"Cannot load results from specified directory.\nThe file .logfile.log has been deleted.\nPlease re-run the analysis",
+                    "Cannot load results from specified directory.\nThe file .logfile.log has been deleted.\nPlease re-run the analysis",
                 )
                 return
             mainW.paramsdf = pd.DataFrame(index=[], columns=["Value"])
@@ -513,7 +513,7 @@ class GuiFunctions(MainWindow):
                 )
                 mainW.fasta_path = mainW.paramsdf.loc["query", "Value"]
             tmpdir = mainW.outdir / ".tmp"
-            if tmpdir.exists() == False:
+            if not tmpdir.exists():
                 tmpdir.mkdir()
             # Check if outdir has all the needed items
             child_count = 0
@@ -902,8 +902,8 @@ class GuiFunctions(MainWindow):
 
     def eteInteractive(self) -> None:
         buttonId = mainW.ui.TreesRenderButtonGroup.button(self).text()
-        if hasattr(mainW, "selectedSeq") == False:
-            GuiFunctions.showError(self, f"Please select a sequence first")
+        if not hasattr(mainW, "selectedSeq"):
+            GuiFunctions.showError(self, "Please select a sequence first")
             return
         if mainW.selectedSeq + "_" + buttonId not in mainW.trees:
             GuiFunctions.showError(
@@ -916,34 +916,44 @@ class GuiFunctions(MainWindow):
         ts.title.add_face(TextFace(buttonId + " Gene", fsize=13), column=1)
 
         # Styling for certain clades
-        selectedSeqstyle = NodeStyle()
-        selectedSeqstyle["bgcolor"] = "Gray"
-        defaultStyle = NodeStyle()
-        defaultStyle["bgcolor"] = "White"
-        linAStyle = NodeStyle()
-        linAStyle["bgcolor"] = "Green"
-        linBStyle = NodeStyle()
-        linBStyle["bgcolor"] = "SteelBlue"
-        linCStyle = NodeStyle()
-        linCStyle["bgcolor"] = "Orange"
-        linDStyle = NodeStyle()
-        linDStyle["bgcolor"] = "FireBrick"
+        # selectedSeqstyle = NodeStyle()
+        # selectedSeqstyle["bgcolor"] = "Gray"
+        # defaultStyle = NodeStyle()
+        # defaultStyle["bgcolor"] = "White"
+        # linAStyle = NodeStyle()
+        # linAStyle["bgcolor"] = "Green"
+        # linBStyle = NodeStyle()
+        # linBStyle["bgcolor"] = "SteelBlue"
+        # linCStyle = NodeStyle()
+        # linCStyle["bgcolor"] = "Orange"
+        # linDStyle = NodeStyle()
+        # linDStyle["bgcolor"] = "FireBrick"
         for leaf in t.iter_leaves():
             if leaf.name == mainW.selectedSeq:
-                leaf.img_style = selectedSeqstyle
+                # leaf.img_style = selectedSeqstyle
+                color = "Gray"
             if leaf.name != mainW.selectedSeq:
-                leaf.img_style = defaultStyle
+                # leaf.img_style = defaultStyle
+                pass
             if re.match(r"^A\d+_\S\d", leaf.name):
-                leaf.img_style = linAStyle
+                # leaf.img_style = linAStyle
+                color = "Green"
             if re.match(r"^B\d+_\S\d", leaf.name):
-                leaf.img_style = linBStyle
+                # leaf.img_style = linBStyle
+                color = "SteelBlue"
             if re.match(r"^C\d+_\S\d", leaf.name):
-                leaf.img_style = linCStyle
+                # leaf.img_style = linCStyle
+                color = "Orange"
             if re.match(r"^D\d+_\S\d", leaf.name):
-                leaf.img_style = linDStyle
+                # leaf.img_style = linDStyle
+                color = "FireBrick"
+            face = TextFace(leaf.name, fgcolor=color)
+            leaf.add_face(face, column=0, position="branch-right")
         ts.show_branch_support = True
         t.ladderize(direction=1)
-        t.show(tree_style=ts, child_app=True)
+        # t.show(tree_style=ts, child_app=True)
+        ts.show_leaf_name = False
+        t.show(tree_style=ts)
         return
 
     def updateLed(self) -> None:
@@ -956,8 +966,8 @@ class GuiFunctions(MainWindow):
         return
 
     def createSimplot(self) -> None:
-        if hasattr(mainW, "selectedSeq") == False:
-            GuiFunctions.showError(self, f"Please select a sequence first")
+        if not hasattr(mainW, "selectedSeq"):
+            GuiFunctions.showError(self, "Please select a sequence first")
             return
         mainW.tmpOut = mainW.outdir / ".tmp"
         mainW.aln_f = simplot.align(
@@ -976,8 +986,8 @@ class GuiFunctions(MainWindow):
         return
 
     def saveGraphics(self) -> None:
-        if hasattr(mainW, "selectedSeq") == False:
-            GuiFunctions.showError(self, f"Please select a sequence first")
+        if not hasattr(mainW, "selectedSeq"):
+            GuiFunctions.showError(self, "Please select a sequence first")
             return
         for i in range(len(mainW.ui.graphicsList)):
             fig = mainW.ui.graphicsList[i]
@@ -1681,7 +1691,7 @@ class Ui_MainWindow(QMainWindow):
 
     def retranslateUi(self, MainWindow):
         self.pageNameInfo.setText(
-            QCoreApplication.translate("MainWindow", f" Viewing - HOME", None)
+            QCoreApplication.translate("MainWindow", " Viewing - HOME", None)
         )
         self.toolLabel.setText(
             QCoreApplication.translate("MainWindow", "HPV16-Genotyper ", None)
@@ -2071,7 +2081,6 @@ def main() -> int:
     QFontDatabase.addApplicationFont(str(font_dir / "segoeui.ttf"))
     QFontDatabase.addApplicationFont(str(font_dir / "segoeuib.ttf"))
     screen = app.primaryScreen()
-    print(sys.platform)
     if sys.platform == "win32":
         ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 6)
     return app.exec_()

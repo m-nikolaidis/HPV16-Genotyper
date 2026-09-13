@@ -901,6 +901,29 @@ class GuiFunctions(MainWindow):
         return
 
     def eteInteractive(self) -> None:
+
+        def _show_ete_tree(tree, tree_style):
+            before = {id(w) for w in QApplication.topLevelWidgets()}
+            windows = []
+
+            original_exec = QApplication.exec_
+
+            def ignore_exec(*args, **kwargs):
+                windows.extend(
+                    w
+                    for w in QApplication.topLevelWidgets()
+                    if id(w) not in before and w not in windows
+                )
+                return 0
+
+            try:
+                QApplication.exec_ = ignore_exec
+                tree.show(tree_style=tree_style)
+            finally:
+                QApplication.exec_ = original_exec
+
+            return windows
+
         buttonId = mainW.ui.TreesRenderButtonGroup.button(self).text()
         if not hasattr(mainW, "selectedSeq"):
             GuiFunctions.showError(self, "Please select a sequence first")
@@ -910,24 +933,18 @@ class GuiFunctions(MainWindow):
                 self, f"Sequence {mainW.selectedSeq}\ndoes not have {buttonId} gene"
             )
             return
-        t = mainW.trees[mainW.selectedSeq + "_" + buttonId]
+        t = mainW.trees[mainW.selectedSeq + "_" + buttonId].copy(method="deepcopy")
         t.ladderize(direction=1)
         ts = TreeStyle()
         ts.title.add_face(TextFace(buttonId + " Gene", fsize=13), column=1)
 
+        # Previously I was using the following to color the background
         # Styling for certain clades
         # selectedSeqstyle = NodeStyle()
         # selectedSeqstyle["bgcolor"] = "Gray"
-        # defaultStyle = NodeStyle()
-        # defaultStyle["bgcolor"] = "White"
-        # linAStyle = NodeStyle()
-        # linAStyle["bgcolor"] = "Green"
-        # linBStyle = NodeStyle()
-        # linBStyle["bgcolor"] = "SteelBlue"
-        # linCStyle = NodeStyle()
-        # linCStyle["bgcolor"] = "Orange"
-        # linDStyle = NodeStyle()
-        # linDStyle["bgcolor"] = "FireBrick"
+        # leaf.img_style = selectedSeqstyle
+
+        color = "Black"  # Default
         for leaf in t.iter_leaves():
             if leaf.name == mainW.selectedSeq:
                 # leaf.img_style = selectedSeqstyle
@@ -953,7 +970,15 @@ class GuiFunctions(MainWindow):
         t.ladderize(direction=1)
         # t.show(tree_style=ts, child_app=True)
         ts.show_leaf_name = False
-        t.show(tree_style=ts)
+        windows = _show_ete_tree(t, ts)
+
+        for window in windows:
+            key = f"ete_{id(window)}"
+            mainW.openWindows[key] = window
+            window.destroyed.connect(
+                lambda *args, key=key: mainW.openWindows.pop(key, None)
+            )
+        # t.show(tree_style=ts)
         return
 
     def updateLed(self) -> None:

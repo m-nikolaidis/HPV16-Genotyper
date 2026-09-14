@@ -1,7 +1,11 @@
 import pathlib
 import numpy as np
 from Bio import AlignIO
-# from Bio.Align.Applications import MuscleCommandline
+
+if __package__:
+    from .appFunctions import _run_external
+else:  # pragma: no cover - supports running the module directly
+    from appFunctions import _run_external
 
 
 def _isolate_sequence(seqs_dict, recseq, outpath):
@@ -29,10 +33,17 @@ def align(muscle_bin, db_gene_f, seqs_dict, recseq, outpath):
     Then the temporary file is going to be utilized for the profile alignment
     """
     f = _isolate_sequence(seqs_dict, recseq, outpath)
-    aln_cline = MuscleCommandline(
-        cmd=muscle_bin, in1=f, in2=db_gene_f, out=f, profile=True
-    )
-    aln_cline()
+    command = [
+        muscle_bin,
+        "-profile",
+        "-in1",
+        f,
+        "-in2",
+        db_gene_f,
+        "-out",
+        f,
+    ]
+    _run_external(command, "MUSCLE")
     return f
 
 
@@ -94,4 +105,5 @@ def rm_tmpfile(file):
     """
     if not isinstance(file, pathlib.Path):
         file = pathlib.Path(file)
-    file.unlink()
+    if file.exists():
+        file.unlink()

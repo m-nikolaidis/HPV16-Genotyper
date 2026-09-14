@@ -16,12 +16,14 @@
 import os
 import re
 import sys
+import subprocess
 import ctypes
 
 if __package__:
-    from . import appFunctions, simplot
+    from . import appFunctions, files_rc, simplot
 else:
     import appFunctions  # Tool module
+    import files_rc  # Qt resource module
     import simplot  # Tool module
 import pathlib
 import logging
@@ -31,7 +33,15 @@ import plotly.express as px
 from datetime import date
 from Bio import SeqIO
 from QLed import QLed
-from PyQt5.QtGui import QFont, QFontDatabase, QIcon, QDesktopServices
+from PyQt5.QtGui import (
+    QColor,
+    QFont,
+    QIcon,
+    QPainter,
+    QPixmap,
+    QDesktopServices,
+    QFontDatabase,
+)
 from PyQt5.QtCore import (
     Qt,
     QObject,
@@ -91,18 +101,14 @@ class Worker(QObject):
         super().__init__(parent)
         GuiFunctions.addNewMenu(
             mainW,
-            "Progress",
-            "progressButton",
-            "url(:/resources/icons/cil-magnifying-glass.png)",
-            True,
+            name="Progress",
+            objName="progressButton",
+            icon=":/resources/icons/cil-home.png",
+            isTopMenu=True,
         )
         mainW.buttons["Progress"].click()
         mainW.buttons["Main Page"].setEnabled(False)
-        mainW.buttons["Main Page"].setStyleSheet(
-            Style.style_home_bt_unavailable.replace(
-                "ICON_REPLACE", "url(:/resources/icons/cil-home.png)"
-            )
-        )
+        mainW.buttons["Main Page"].setStyleSheet(Style.style_sidebar_menu)
 
     def runPipeline(self) -> None:
         success = False
@@ -155,12 +161,13 @@ class MainWindow(QMainWindow):
         startSize = QSize(1000, 720)
         self.resize(startSize)
         self.setMinimumSize(startSize)
+        self.eteProcesses = []
 
         self.buttons = {}
 
         self.ui.stackedWidget.setMinimumWidth(20)
         GuiFunctions.addNewMenu(
-            self, "Main Page", "homeButton", "url(:resources/icons/cil-home.png)", True
+            self, "Main Page", "homeButton", ":/resources/icons/cil-home.png", True
         )
         GuiFunctions.addHomeButtons(self)
 
@@ -234,19 +241,75 @@ class MainWindow(QMainWindow):
             "Do you want to close this window?\nThe application will be terminated",
             QMessageBox.Yes | QMessageBox.No,
         )
-        if reply == QMessageBox.Yes:
-            event.accept()
-            logging.shutdown()
-            if list(mainW.openWindows.keys()) != []:
-                for w in mainW.openWindows:
-                    mainW.openWindows[w].close()
-        else:
+        if reply != QMessageBox.Yes:
             event.ignore()
+            return
+
+        # Prevent timers from firing while we're tearing things down.
+        if hasattr(self, "blastTimer"):
+            self.blastTimer.stop()
+
+        # Close secondary windows.
+        # Use a COPY because some of your destroyed handlers may remove
+        # entries from openWindows.
+        for window in list(mainW.openWindows.values()):
+            try:
+                window.close()
+            except RuntimeError:
+                # Wrapped C++ object may already have been deleted.
+                pass
+
+        mainW.openWindows.clear()
+
+        # Deal with the pipeline thread if it still exists.
+
+        if hasattr(self, "thread"):
+            try:
+                if self.thread.isRunning():
+                    self.thread.requestInterruption()
+                    self.thread.quit()
+
+                    # Don't block forever.
+                    self.thread.wait(3000)
+            except RuntimeError:
+                # QThread's C++ object was already deleteLater()'d.
+                pass
+
+        # if list(mainW.openWindows.keys()) != []:
+        #     for w in mainW.openWindows:
+        #         mainW.openWindows[w].close()
+
+        logging.shutdown()
+        event.accept()
+        # QTimer.singleShot(0, QApplication.instance().quit)
+        return
 
 
 class GuiFunctions(MainWindow):
     def labelTitle(self, text):
         self.ui.label_title_bar_top.setText(text)
+
+    @staticmethod
+    def _setMenuIcon(button, icon):
+        """Set a fixed-size icon from either a Qt resource path or url(...)."""
+        if icon.startswith("url(") and icon.endswith(")"):
+            icon = icon[4:-1]
+        pixmap = QPixmap(icon)
+        if not pixmap.isNull():
+            painter = QPainter(pixmap)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            painter.fillRect(pixmap.rect(), QColor(255, 255, 255))
+            painter.end()
+        button.setIcon(QIcon(pixmap))
+        button.setIconSize(QSize(24, 24))
+
+    @staticmethod
+    def _home_button_icon(obj_name):
+        if obj_name == "loadFastaButton":
+            return ":/resources/icons/cil-magnifying-glass.png"
+        if obj_name in {"selectOutdirButton", "loadResultsButton"}:
+            return ":/resources/icons/cil-open-folder.png"
+        return ":/resources/icons/cil-home.png"
 
     # Dynamic menus
     def addNewMenu(self, name, objName, icon, isTopMenu):
@@ -254,11 +317,14 @@ class GuiFunctions(MainWindow):
         font.setFamily("Segoe UI")
         button = QPushButton(str(1), self)
         button.setObjectName(objName)
-        button.setMinimumSize(QSize(0, 70))
+        button.setMinimumSize(QSize(70, 70))
         button.setLayoutDirection(Qt.LeftToRight)
         button.setFont(font)
-        button.setStyleSheet(Style.style_bt_standard.replace("ICON_REPLACE", icon))
-        button.setText(name)
+        if icon:
+            GuiFunctions._setMenuIcon(button, icon)
+        button.setStyleSheet(Style.style_sidebar_menu)
+        # The compact sidebar communicates menu names through tooltips.
+        button.setText("")
         button.setToolTip(name)
         button.clicked.connect(self.Button)
         self.buttons[name] = button
@@ -321,19 +387,14 @@ class GuiFunctions(MainWindow):
             homeButton.setMinimumSize(QSize(0, 70))
             homeButton.setLayoutDirection(Qt.LeftToRight)
             homeButton.setFont(font)
+            GuiFunctions._setMenuIcon(
+                homeButton, GuiFunctions._home_button_icon(objName)
+            )
             if objName == "selectOutdirButton":
                 homeButton.setEnabled(False)
-                homeButton.setStyleSheet(
-                    Style.style_bt_disabled.replace(
-                        "ICON_REPLACE", "url(:/resources/icons/cil-home.png)"
-                    )
-                )
+                homeButton.setStyleSheet(Style.style_bt_disabled)
             else:
-                homeButton.setStyleSheet(
-                    Style.style_bt_standard.replace(
-                        "ICON_REPLACE", "url(:/resources/icons/cil-home.png)"
-                    )
-                )
+                homeButton.setStyleSheet(Style.style_bt_standard)
             homeButton.setText(name)
             homeButton.setToolTip(name)
             homeButton.clicked.connect(self.Button)
@@ -377,20 +438,15 @@ class GuiFunctions(MainWindow):
             homeButton.setMinimumSize(QSize(0, 70))
             homeButton.setLayoutDirection(Qt.LeftToRight)
             homeButton.setFont(font)
-            homeButton.setStyleSheet(
-                Style.style_bt_standard.replace(
-                    "ICON_REPLACE", "url(:/resources/icons/cil-home.png)"
-                )
+            GuiFunctions._setMenuIcon(
+                homeButton, GuiFunctions._home_button_icon(objName)
             )
+            homeButton.setStyleSheet(Style.style_bt_standard)
             homeButton.setText(name)
             homeButton.setToolTip(name)
             homeButton.clicked.connect(self.Button)
             if objName == "runPipelineButton":
-                homeButton.setStyleSheet(
-                    Style.style_bt_highlight.replace(
-                        "ICON_REPLACE", "url(:/resources/icons/cil-home.png)"
-                    )
-                )
+                homeButton.setStyleSheet(Style.style_bt_highlight)
             if objName == "loadResultsButton":
                 self.ui.homeMenuGridLayout.addWidget(self.ui.orLabel)
             if objName == "openHelpButton":
@@ -536,10 +592,10 @@ class GuiFunctions(MainWindow):
             )  # Just in case this is not the first time the user loads the results
             GuiFunctions.addNewMenu(
                 self,
-                "Results",
-                "resultsButton",
-                "url(:/resources/icons/cil-magnifying-glass.png)",
-                True,
+                name="Results",
+                objName="resultsButton",
+                icon=":/resources/icons/cil-magnifying-glass.png",
+                isTopMenu=True,
             )
             GuiFunctions.initVariables(self)
             mainW.showMaximized()
@@ -575,11 +631,7 @@ class GuiFunctions(MainWindow):
             lambda: mainW.buttons["Main Page"].setEnabled(True)
         )
         self.thread.finished.connect(
-            lambda: mainW.buttons["Main Page"].setStyleSheet(
-                Style.style_bt_standard.replace(
-                    "ICON_REPLACE", "url(:/resources/icons/cil-home.png)"
-                )
-            )
+            lambda: mainW.buttons["Main Page"].setStyleSheet(Style.style_sidebar_menu)
         )
         self.thread.finished.connect(lambda: GuiFunctions.removeMenu(self, "Results"))
         self.thread.finished.connect(lambda: GuiFunctions.removeMenu(self, "Progress"))
@@ -596,7 +648,7 @@ class GuiFunctions(MainWindow):
                     self,
                     "Results",
                     "resultsButton",
-                    "url(:/resources/icons/cil-magnifying-glass.png)",
+                    ":/resources/icons/cil-magnifying-glass.png",
                     True,
                 )
                 if self._pipeline_succeeded
@@ -901,85 +953,37 @@ class GuiFunctions(MainWindow):
         return
 
     def eteInteractive(self) -> None:
-
-        def _show_ete_tree(tree, tree_style):
-            before = {id(w) for w in QApplication.topLevelWidgets()}
-            windows = []
-
-            original_exec = QApplication.exec_
-
-            def ignore_exec(*args, **kwargs):
-                windows.extend(
-                    w
-                    for w in QApplication.topLevelWidgets()
-                    if id(w) not in before and w not in windows
-                )
-                return 0
-
-            try:
-                QApplication.exec_ = ignore_exec
-                tree.show(tree_style=tree_style)
-            finally:
-                QApplication.exec_ = original_exec
-
-            return windows
-
         buttonId = mainW.ui.TreesRenderButtonGroup.button(self).text()
+
         if not hasattr(mainW, "selectedSeq"):
             GuiFunctions.showError(self, "Please select a sequence first")
             return
-        if mainW.selectedSeq + "_" + buttonId not in mainW.trees:
+
+        tree_key = mainW.selectedSeq + "_" + buttonId
+
+        if tree_key not in mainW.trees:
             GuiFunctions.showError(
-                self, f"Sequence {mainW.selectedSeq}\ndoes not have {buttonId} gene"
+                self,
+                f"Sequence {mainW.selectedSeq}\ndoes not have {buttonId} gene",
             )
             return
-        t = mainW.trees[mainW.selectedSeq + "_" + buttonId].copy(method="deepcopy")
-        t.ladderize(direction=1)
-        ts = TreeStyle()
-        ts.title.add_face(TextFace(buttonId + " Gene", fsize=13), column=1)
 
-        # Previously I was using the following to color the background
-        # Styling for certain clades
-        # selectedSeqstyle = NodeStyle()
-        # selectedSeqstyle["bgcolor"] = "Gray"
-        # leaf.img_style = selectedSeqstyle
+        tree_path = mainW.trees_dir / f"{tree_key}_aln_NJ_tree.nwk"
 
-        color = "Black"  # Default
-        for leaf in t.iter_leaves():
-            if leaf.name == mainW.selectedSeq:
-                # leaf.img_style = selectedSeqstyle
-                color = "Gray"
-            if leaf.name != mainW.selectedSeq:
-                # leaf.img_style = defaultStyle
-                pass
-            if re.match(r"^A\d+_\S\d", leaf.name):
-                # leaf.img_style = linAStyle
-                color = "Green"
-            if re.match(r"^B\d+_\S\d", leaf.name):
-                # leaf.img_style = linBStyle
-                color = "SteelBlue"
-            if re.match(r"^C\d+_\S\d", leaf.name):
-                # leaf.img_style = linCStyle
-                color = "Orange"
-            if re.match(r"^D\d+_\S\d", leaf.name):
-                # leaf.img_style = linDStyle
-                color = "FireBrick"
-            face = TextFace(leaf.name, fgcolor=color)
-            leaf.add_face(face, column=0, position="branch-right")
-        ts.show_branch_support = True
-        t.ladderize(direction=1)
-        # t.show(tree_style=ts, child_app=True)
-        ts.show_leaf_name = False
-        windows = _show_ete_tree(t, ts)
+        # Drop references to ETE viewers that have already exited.
+        mainW.eteProcesses = [p for p in mainW.eteProcesses if p.poll() is None]
 
-        for window in windows:
-            key = f"ete_{id(window)}"
-            mainW.openWindows[key] = window
-            window.destroyed.connect(
-                lambda *args, key=key: mainW.openWindows.pop(key, None)
-            )
-        # t.show(tree_style=ts)
-        return
+        p = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "hpv16genotyper.ete_viewer",
+                str(tree_path),
+                mainW.selectedSeq,
+                buttonId,
+            ]
+        )
+        mainW.eteProcesses.append(p)
 
     def updateLed(self) -> None:
         if mainW.selectedSeq in mainW.putRecSeqs:
@@ -1238,6 +1242,7 @@ class Ui_MainWindow(QMainWindow):
         self.horizontalLayout_1.setSpacing(0)
         self.horizontalLayout_1.setContentsMargins(0, 0, 0, 0)
         self.frame_left_menu = QFrame(self.frame_center)
+        self.frame_left_menu.setMinimumSize(QSize(70, 0))
         self.frame_left_menu.setMaximumSize(QSize(70, 16777215))
 
         self.frame_left_menu.setLayoutDirection(Qt.LeftToRight)
@@ -1678,14 +1683,10 @@ class Ui_MainWindow(QMainWindow):
         self.saveGraphicsFrameButton.setMinimumSize(QSize(150, 30))
         self.saveGraphicsFrameButton.setFont(QFont("Segoe UI", 9))
         self.saveGraphicsFrameButton.setStyleSheet(Style.style_push_button)
-        icon = QIcon()
-        icon.addFile(
-            "url(:/resources/icons/cil-magnifying-glass.png)",
-            QSize(),
-            QIcon.Normal,
-            QIcon.Off,
+        GuiFunctions._setMenuIcon(
+            self.saveGraphicsFrameButton,
+            ":/resources/icons/cil-magnifying-glass.png",
         )
-        self.saveGraphicsFrameButton.setIcon(icon)
         self.saveGraphicsFrameButton.setText("Save graphics")
         self.saveGraphicsFrameButton.clicked.connect(GuiFunctions.saveGraphics)
         self.saveGraphicsVBoxLayout.addWidget(self.saveGraphicsFrameButton)
@@ -1740,9 +1741,6 @@ class Style:
 
     style_bt_standard = """
 		QPushButton {
-			background-image: ICON_REPLACE;
-			background-position: left center;
-			background-repeat: no-repeat;
 			border: none;
 			border-left: 28px solid rgb(27, 29, 35);
 			background-color: rgb(27, 29, 35);
@@ -1750,9 +1748,6 @@ class Style:
 			padding-left: 45px;
 		}
 		QPushButton[Active=true] {
-			background-image: ICON_REPLACE;
-			background-position: left center;
-			background-repeat: no-repeat;
 			border: none;
 			border-left: 28px solid rgb(27, 29, 35);
 			border-right: 5px solid rgb(44, 49, 60);
@@ -1770,11 +1765,26 @@ class Style:
 		}
 		"""
 
+    style_sidebar_menu = """
+        QPushButton {
+            border: none;
+            background-color: rgb(27, 29, 35);
+            text-align: center;
+            padding: 0px;
+        }
+        QPushButton:hover {
+            background-color: rgb(33, 37, 43);
+        }
+        QPushButton:pressed {
+            background-color: rgb(85, 170, 255);
+        }
+        QPushButton:disabled {
+            background-color: rgb(27, 29, 35);
+        }
+    """
+
     style_bt_disabled = """
 		QPushButton {
-			background-image: ICON_REPLACE;
-			background-position: left center;
-			background-repeat: no-repeat;
 			border: none;
 			border-left: 28px solid rgb(27, 29, 50);
 			background-color: rgb(27, 29, 50);
@@ -1784,9 +1794,6 @@ class Style:
 		"""
     style_home_bt_unavailable = """
 		QPushButton {
-			background-image: ICON_REPLACE;
-			background-position: left center;
-			background-repeat: no-repeat;
 			border: none;
 			border-left: 28px solid rgb(27, 29, 50);
 			background-color: rgb(27, 29, 50);
@@ -1796,9 +1803,6 @@ class Style:
 		"""
     style_bt_highlight = """
 		QPushButton {
-			background-image: ICON_REPLACE;
-			background-position: left center;
-			background-repeat: no-repeat;
 			border: none;
 			border-left: 28px solid #3c57b0;
 			background-color: #3c57b0;
@@ -1806,9 +1810,6 @@ class Style:
 			padding-left: 45px;
 		}
 		QPushButton[Active=true] {
-			background-image: ICON_REPLACE;
-			background-position: left center;
-			background-repeat: no-repeat;
 			border: none;
 			border-left: 28px solid #5B6481;
 			border-right: 5px solid #5B6481;
@@ -2066,7 +2067,7 @@ class Style:
 		QCheckBox::indicator:checked {
 		background: 3px solid rgb(52, 59, 72);
 		border: 3px solid rgb(52, 59, 72);
-		background-image: url(:/resources/icons/cil-check-alt.png);
+		background-image: :/resources/icons/cil-check-alt.png;
 		}
 		"""
     style_line_edit = """
@@ -2108,7 +2109,9 @@ def main() -> int:
     screen = app.primaryScreen()
     if sys.platform == "win32":
         ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 6)
-    return app.exec_()
+    result = app.exec_()
+    print("QAPPLICATION EVENT LOOP EXITED", flush=True)
+    return result
 
 
 if __name__ == "__main__":

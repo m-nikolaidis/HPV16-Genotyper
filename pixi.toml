@@ -2,7 +2,7 @@
 authors = ["Marios Nikolaidis <marionik23@gmail.com>"]
 channels = ["conda-forge", "bioconda"]
 name = "HPV16-Genotyper"
-platforms = ["osx-arm64"]
+platforms = ["osx-arm64", "linux-64", "win-64"]
 version = "0.1.0"
 
 [tasks]

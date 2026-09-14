@@ -1,0 +1,79 @@
+name: Build application
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pyinstaller:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos-arm64
+            separator: ":"
+            artifact_path: dist/HPV16-Genotyper.app
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            separator: ":"
+            artifact_path: dist/HPV16-Genotyper
+          - os: windows-latest
+            platform: windows-x86_64
+            separator: ";"
+            artifact_path: dist/HPV16-Genotyper
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: latest
+          cache: true
+
+      - name: Install pixi environment
+        # The lockfile is generated on the developer's host platform. Resolve
+        # the selected native runner platform in CI instead.
+        run: pixi install
+
+      - name: Install PyInstaller in pixi environment
+        run: pixi run python -m pip install "pyinstaller>=6,<7"
+
+      - name: Bundle application
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          binary_args=()
+          for binary in makeblastdb blastn muscle fasttree; do
+            path="$(pixi run python -c "import shutil; print(shutil.which('$binary') or '')")"
+            if [[ -z "$path" ]]; then
+              echo "Could not resolve $binary from pixi environment" >&2
+              exit 1
+            fi
+            binary_args+=(--add-binary "$path${{ matrix.separator }}bin")
+          done
+
+          pixi run pyinstaller \
+            --noconfirm \
+            --clean \
+            --windowed \
+            --onedir \
+            --name HPV16-Genotyper \
+            --add-data "hpv16genotyper/resources${{ matrix.separator }}resources" \
+            "${binary_args[@]}" \
+            hpv16genotyper/app.py
+
+      - name: Upload macOS application
+        uses: actions/upload-artifact@v4
+        with:
+          name: HPV16-Genotyper-${{ matrix.platform }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error

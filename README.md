@@ -41,9 +41,12 @@ A13 saves A8 and A10 on the output directory. Panel B shows an example interacti
 
 The software comes with a pixi.toml environment file and can be used to initiate the environment through pixi.
 To download and install use the following commands
-`git clone https://github.com/m-nikolaidis/HPV16-Genotyper.git`
-`cd HPV16-Genotyper`
-`pixi shell`
+
+```
+git clone https://github.com/m-nikolaidis/HPV16-Genotyper.git;
+cd HPV16-Genotyper;
+pixi shell;
+```
 
 Once you have the successfully activate the shell environment you can invoke the software using the following command:
 `python -m hpv16genotype`
@@ -51,7 +54,8 @@ Once you have the successfully activate the shell environment you can invoke the
 ### Use precompiled versions
 
 The _older_ version of this software is precompiled and ready to use for [Windows 10](http://bioinf.bio.uth.gr/downloads/HPV16-genotyperWin10.zip) and [Ubuntu 20](http://bioinf.bio.uth.gr/downloads/HPV16-genotyperUb20.tar.gz).
-More information and a help video can be found in our laboratory's [website](http://bioinf.bio.uth.gr/hpv16-genotyper.html)
+More information and a help video can be found in our laboratory's [website](http://bioinf.bio.uth.gr/hpv16-genotyper.html).  
+**These versions are being phased out.**
 
 The _newer_ versions should be available from github actions
 
@@ -59,11 +63,9 @@ The _newer_ versions should be available from github actions
 
 For older versions
 
-- #### Windows
+- Windows: No requirements
 
-  No requirements
-
-- #### Ubuntu
+- Ubuntu:
 
   The application needs the libflt1.3 library, which can be installed via:
   1. `sudo apt-get install libfltk1.3*`

@@ -1,0 +1,26 @@
+[workspace]
+authors = ["Marios Nikolaidis <marionik23@gmail.com>"]
+channels = ["conda-forge", "bioconda"]
+name = "HPV16-Genotyper"
+platforms = ["osx-arm64", "linux-64", "win-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = "3.12.*"
+blast = ">=2.17.0,<3"
+muscle = "==3.8.1551"
+fasttree = ">=2.2.0,<3"
+
+[pypi-dependencies]
+biopython = ">=1.78"
+numpy = ">=1.20"
+pandas = ">=1.3"
+openpyxl = ">=3.0"
+pyqt5 = ">=5.15"
+pyqtwebengine = ">=5.15"
+pyqtgraph = ">=0.12"
+plotly = ">=5.0"
+ete3 = ">=3.1"
+qled = ">=1.3.1"

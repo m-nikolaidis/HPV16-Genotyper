@@ -2,6 +2,8 @@
   <qresource>
     <file>resources/icons/cil-home.png</file>
     <file>resources/icons/cil-magnifying-glass.png</file>
+    <file>resources/icons/cil-check-alt.png</file>
+    <file>resources/icons/cil-open-folder.png</file>
     <file>resources/cSNPinfo/NC001526_NuclPos_145.md</file>
     <file>resources/cSNPinfo/NC001526_NuclPos_2860.md</file>
     <file>resources/cSNPinfo/NC001526_NuclPos_335.md</file>

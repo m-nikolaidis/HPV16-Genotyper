@@ -59,6 +59,40 @@ More information and a help video can be found in our laboratory's [website](htt
 
 The _newer_ versions should be available from github actions
 
+### Phylogenetic trees
+
+Gene trees are inferred from the MUSCLE nucleotide alignments with the BioNJ
+distance method implemented by FastME. Distances use FastME's F84 model with
+pairwise deletion of gaps, and BioNJ branch lengths are retained without a
+maximum-likelihood optimization step.
+
+### Prepare external tools for a Windows package
+
+The Windows executables are downloaded on demand and are not stored in Git.
+On a Debian or Ubuntu packaging host, install the required cross-build tools:
+
+```bash
+sudo apt install curl tar coreutils make autoconf automake mingw-w64
+```
+
+Then run:
+
+```bash
+./hpv16genotyper/misc/download_windows_binaries.sh
+```
+
+The script downloads checksum-pinned BLAST+ 2.17.0 and MUSCLE 3.8.31 Windows
+binaries, downloads pinned FastME 2.1.6.4 source, and compiles FastME with
+`x86_64-w64-mingw32-gcc`. The packaging-ready executables and BLAST runtime
+libraries are written to `downloads/windows/bin/`. Downloaded archives are
+cached under `downloads/windows/cache/`; both directories are ignored by Git.
+
+An alternative output directory can be passed as the first argument:
+
+```bash
+./hpv16genotyper/misc/download_windows_binaries.sh /path/to/windows-tools
+```
+
 ## Requirements
 
 For older versions

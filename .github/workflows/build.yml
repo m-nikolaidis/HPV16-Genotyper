@@ -22,10 +22,6 @@ jobs:
             platform: linux-x86_64
             separator: ":"
             artifact_path: dist/HPV16-Genotyper
-          - os: windows-latest
-            platform: windows-x86_64
-            separator: ";"
-            artifact_path: dist/HPV16-Genotyper
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -52,7 +48,7 @@ jobs:
           set -euo pipefail
 
           binary_args=()
-          for binary in makeblastdb blastn muscle fasttree; do
+          for binary in makeblastdb blastn muscle fastme; do
             path="$(pixi run python -c "import shutil; print(shutil.which('$binary') or '')")"
             if [[ -z "$path" ]]; then
               echo "Could not resolve $binary from pixi environment" >&2

@@ -7,13 +7,14 @@ import pathlib
 import logging
 import subprocess
 import multiprocessing
+import tempfile
 from contextlib import contextmanager
 import pandas as pd
 import numpy as np
 from multiprocessing.pool import ThreadPool
 from collections import Counter
 from PyQt5.QtCore import pyqtSignal, QObject
-from Bio import SeqIO
+from Bio import AlignIO, Phylo, SeqIO
 
 pd.options.mode.chained_assignment = None
 
@@ -28,11 +29,12 @@ class ExternalToolError(RuntimeError):
         if isinstance(stderr, bytes):
             stderr = stderr.decode(errors="replace")
         self.stderr = str(stderr or "").strip()
-        status = (
-            f"exit code {returncode}"
-            if returncode is not None
-            else "could not be started"
-        )
+        if returncode == 0:
+            status = "no usable output"
+        elif returncode is not None:
+            status = f"exit code {returncode}"
+        else:
+            status = "could not be started"
         detail = _stderr_summary(self.stderr)
         message = f"{self.tool} failed ({status})"
         if detail:
@@ -927,28 +929,66 @@ class MainFunctions(QObject):
         self,
         outdir: pathlib.Path,
         aln_files: list,
-        fasttree_bin: str,
+        fastme_bin: str,
         threads: int,
         exe: bool = True,
     ) -> pathlib.Path:
         """
-        Compute phylogenetic trees with FastTree.
+        Compute BioNJ phylogenetic trees with FastME.
         """
         if not exe:
             trees_dir = outdir / pathlib.Path("Phylogenetic_Trees")
             return trees_dir
 
         trees_dir = outdir / pathlib.Path("Phylogenetic_Trees")
-        logging.info("Initiating FastTree tree calculation")
+        logging.info("Initiating FastME BioNJ tree calculation")
 
         def _treeFunc(aln_f):
             tree_file_out = trees_dir / (aln_f.stem + "_NJ_tree.nwk")
-            with tree_file_out.open("w") as tree_handle:
+            with tempfile.TemporaryDirectory(dir=trees_dir) as tmp:
+                tmp_dir = pathlib.Path(tmp)
+                phylip_file = tmp_dir / (aln_f.stem + ".phy")
+                temporary_tree = tmp_dir / (aln_f.stem + ".nwk")
+
+                alignment = AlignIO.read(aln_f, "fasta")
+                original_ids = {}
+                for index, record in enumerate(alignment):
+                    temporary_id = f"S{index:09d}"
+                    original_ids[temporary_id] = record.id
+                    record.id = temporary_id
+                    record.name = temporary_id
+                    record.description = ""
+                AlignIO.write(alignment, phylip_file, "phylip")
+
+                command = [
+                    fastme_bin,
+                    f"--input_data={phylip_file}",
+                    f"--output_tree={temporary_tree}",
+                    "--method=I",
+                    "--dna=4",  # FastME's F84 nucleotide-distance model.
+                    "--branch_length=n",
+                    "--nb_threads=1",
+                ]
                 _run_external(
-                    [fasttree_bin, "-nt", "-gtr", aln_f],
-                    "FastTree",
-                    stdout=tree_handle,
+                    command,
+                    "FastME",
+                    stdout=subprocess.PIPE,
                 )
+                if (
+                    not temporary_tree.is_file()
+                    or temporary_tree.stat().st_size == 0
+                ):
+                    raise ExternalToolError(
+                        "FastME",
+                        command,
+                        returncode=0,
+                        stderr=f"did not produce a tree for {aln_f.name}",
+                    )
+
+                tree = Phylo.read(temporary_tree, "newick")
+                for terminal in tree.get_terminals():
+                    terminal.name = original_ids[terminal.name]
+                Phylo.write(tree, tree_file_out, "newick")
             return 1
 
         self.finishedProcesses = 0
@@ -969,7 +1009,7 @@ class MainFunctions(QObject):
         indir = pathlib.Path(paramsdf.loc["in", "Value"])
         query_f = pathlib.Path(paramsdf.loc["query", "Value"])
         query_f_path = indir / query_f
-        makeblastdb_bin, blastn_bin, muscle_bin, fasttree_bin = _init_binaries(system)
+        makeblastdb_bin, blastn_bin, muscle_bin, fastme_bin = _init_binaries(system)
         annot_f = pathlib.Path(paramsdf.loc["SNP_annotation_file", "Value"])
         threads = paramsdf.loc["num_threads", "Value"]
 
@@ -1087,7 +1127,7 @@ class MainFunctions(QObject):
             profiledb_dir,
             threads=threads,
         )
-        self.build_trees(outdir, aln_files, fasttree_bin, threads=threads)
+        self.build_trees(outdir, aln_files, fastme_bin, threads=threads)
         return query_f_path, outdir, hpv16error
 
 
@@ -1098,7 +1138,7 @@ def _init_binaries(system: sys.platform) -> list:
     executables in a sibling ``bin`` directory below PyInstaller's unpacked
     application root (``sys._MEIPASS``).
     """
-    binary_names = ("makeblastdb", "blastn", "muscle", "fasttree")
+    binary_names = ("makeblastdb", "blastn", "muscle", "fastme")
     executable_suffix = ".exe" if system == "win32" else ""
     meipass = getattr(sys, "_MEIPASS", None)
 
